@@ -148,7 +148,7 @@
 
 <script>
 (async () => {
-  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading, showToast, initOfflineBanner } = FCZ;
+  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading, showToast, initOfflineBanner, API_URL } = FCZ;
 
   // Initialize Map
   const miniMap = L.map('mini-map').setView([-19.0, 30.0], 6);
@@ -169,6 +169,7 @@
 
   if (profile) {
     document.getElementById('stat-farm').textContent = profile.farmSize || 0;
+    document.getElementById('weather-location').textContent = profile.district || 'Kwekwe';
   }
 
   const user = firebase.auth().currentUser;
@@ -206,34 +207,29 @@
     }).join('');
   });
 
-  // Weather Logic
+  // ── Fixed Weather Logic ─────────────────────────────────────────────────────
   async function loadWeather(district) {
+    const weatherBody = document.getElementById('weather-body');
     try {
-      // Weather served through our Express server — API key stays server-side
-     const res = await fetch(`${FCZ.API_URL}/api/weather?district=${encodeURIComponent(district || 'Kwekwe')}`);
+      const res = await fetch(`${API_URL}/api/weather?district=${encodeURIComponent(district || 'Kwekwe')}`);
       if (!res.ok) throw new Error('Weather fetch failed');
       const w = await res.json();
-      document.getElementById('weather-location').textContent = w.city + ', Zimbabwe';
-      document.getElementById('weather-body').innerHTML =
-        '<div style="display:flex;align-items:center;gap:8px;">' +
-          '<img src="https://openweathermap.org/img/wn/' + w.icon + '@2x.png" style="width:56px;height:56px;">' +
-          '<div>' +
-            '<div style="font-size:2rem;font-weight:700;color:var(--green-dark);">' + w.temp + '°C</div>' +
-            '<div style="font-size:.9rem;text-transform:capitalize;">' + w.description + '</div>' +
-          '</div>' +
-        '</div>' +
-        '<div>' +
-          '<p class="text-sm">💧 Humidity: <strong>' + w.humidity + '%</strong></p>' +
-          '<p class="text-sm">🌡️ Feels like: <strong>' + w.feelsLike + '°C</strong></p>' +
-          '<p class="text-sm">💨 Wind: <strong>' + w.windSpeed + ' m/s</strong></p>' +
-        '</div>' +
-        '<div>' +
-          '<p class="text-sm">🌅 Today low: <strong>' + w.todayMin + '°C</strong></p>' +
-          '<p class="text-sm">🌇 Today high: <strong>' + w.todayMax + '°C</strong></p>' +
-          '<p class="text-sm">☁️ Clouds: <strong>' + w.clouds + '%</strong></p>' +
-        '</div>';
+      
+      weatherBody.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;">
+          <img src="https://openweathermap.org/img/wn/${w.icon || '01d'}@2x.png" style="width:56px;height:56px;">
+          <div>
+            <div style="font-size:2rem;font-weight:700;color:var(--green-dark);">${w.temp}°C</div>
+            <div style="font-size:.9rem;text-transform:capitalize;">${w.description}</div>
+          </div>
+        </div>
+        <div>
+          <p class="text-sm">💧 Humidity: <strong>${w.humidity}%</strong></p>
+          <p class="text-sm">🏙️ City: <strong>${w.city}</strong></p>
+        </div>`;
     } catch (e) {
-      document.getElementById('weather-body').innerHTML = '<p class="text-gray text-sm">Weather unavailable.</p>';
+      console.error('Weather Error:', e);
+      weatherBody.innerHTML = '<p class="text-gray text-sm">Weather unavailable. (Check Render logs)</p>';
     }
   }
   loadWeather(profile?.district);
