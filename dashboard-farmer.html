@@ -210,7 +210,7 @@
   async function loadWeather(district) {
     try {
       // Weather served through our Express server — API key stays server-side
-      const res = await fetch('/api/weather?district=' + encodeURIComponent(district || 'Harare'));
+     const res = await fetch(`${FCZ.API_URL}/api/weather?district=${encodeURIComponent(district || 'Kwekwe')}`);
       if (!res.ok) throw new Error('Weather fetch failed');
       const w = await res.json();
       document.getElementById('weather-location').textContent = w.city + ', Zimbabwe';
