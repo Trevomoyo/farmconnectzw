@@ -14,6 +14,9 @@ const FIREBASE_CONFIG = {
   appId:             "1:273410033306:web:97d124d2b709c7f8808123"
 };
 
+// ── Render API Config ────────────────────────────────────────────────────────
+const API_URL = 'https://farmconnectzw.onrender.com';
+
 // ── Init Firebase once ────────────────────────────────────────────────────────
 if (!firebase.apps.length) {
   firebase.initializeApp(FIREBASE_CONFIG);
@@ -200,8 +203,6 @@ document.addEventListener('click', e => {
 });
 
 // ── Push Notifications (Web Push via Express server) ─────────────────────────
-// Uses standard Web Push API — no Firebase Cloud Messaging required.
-// Call once after login to register this device for push notifications.
 async function initPushNotifications() {
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !_currentUser) return;
 
@@ -209,8 +210,8 @@ async function initPushNotifications() {
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return;
 
-    // Get VAPID public key from our Express server
-    const keyRes = await fetch('/api/push/vapid-key');
+    // Use absolute URL for Render
+    const keyRes = await fetch(`${API_URL}/api/push/vapid-key`);
     if (!keyRes.ok) {
       console.warn('FCZ: Push not configured on server — skipping');
       return;
@@ -218,19 +219,16 @@ async function initPushNotifications() {
     const { publicKey } = await keyRes.json();
     if (!publicKey) return;
 
-    // Register service worker
     const reg = await navigator.serviceWorker.register('/sw.js');
     await navigator.serviceWorker.ready;
 
-    // Subscribe to Web Push
     const subscription = await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: _urlBase64ToUint8Array(publicKey)
     });
 
-    // Send subscription to server
     const token = await _currentUser.getIdToken();
-    await fetch('/api/push/subscribe', {
+    await fetch(`${API_URL}/api/push/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ subscription })
@@ -238,7 +236,6 @@ async function initPushNotifications() {
 
     console.log('FCZ: Push notifications registered');
   } catch (e) {
-    // Non-critical — app works fine without push
     console.warn('FCZ: Push setup failed:', e.message);
   }
 }
@@ -255,7 +252,7 @@ async function notifyNewMessage(recipientId, senderName, preview) {
   if (!_currentUser) return;
   try {
     const token = await _currentUser.getIdToken();
-    fetch('/api/notify/message', {
+    fetch(`${API_URL}/api/notify/message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({ recipientId, senderName, preview })
@@ -266,6 +263,7 @@ async function notifyNewMessage(recipientId, senderName, preview) {
 // ── Export to window so all inline page scripts can use them ─────────────────
 window.FCZ = {
   Auth, DB,
+  API_URL,
   authReady, requireAuth, loadProfile,
   getCurrentUser, getUserProfile, setUserProfile,
   isLoggedIn, getRole, dashboardFor, logout,
