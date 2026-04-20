@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farmer Dashboard — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 You are offline — some data may be outdated</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between">
+    <div>
+      <h1 id="welcome">Welcome, Farmer 👋</h1>
+      <p id="today-date" class="text-gray"></p>
+    </div>
+  </div>
+
+  <div class="stats-grid mb-24">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-livestock">—</div>
+      <div class="stat-label">Total Livestock</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-farm">—</div>
+      <div class="stat-label">Farm Size (ha)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-messages">—</div>
+      <div class="stat-label">Unread Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-label">Active Alerts</div>
+    </div>
+  </div>
+
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+    <div class="action-grid">
+      <a href="livestock-tracking.html" class="btn btn-primary">🐄 Livestock</a>
+      <a href="map.html" class="btn btn-secondary">🗺️ Farm Map</a>
+      <a href="market-prices.html" class="btn btn-accent">📊 Market Prices</a>
+      <button class="btn btn-primary" id="sell-btn">🛒 Sell Product</button>
+      <button class="btn btn-outline" id="buy-btn">🛍️ Buy Products</button>
+      <a href="messages.html" class="btn btn-outline">💬 Messages</a>
+      <a href="knowledge-hub.html" class="btn btn-outline">📚 Learn</a>
+      <a href="profile.html" class="btn btn-outline">👤 Profile</a>
+    </div>
+  </div>
+
+  <div class="card mb-24" id="weather-card">
+    <div class="card-header">
+      <h3 class="card-title">🌤️ Current Weather</h3>
+      <span class="text-sm text-gray" id="weather-location">—</span>
+    </div>
+    <div id="weather-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;align-items:center;">
+      <p class="text-gray text-sm">Loading weather…</p>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Recent Alerts</h3>
+        <a href="notifications.html" class="btn btn-sm btn-outline">View All</a>
+      </div>
+      <div id="alerts-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Farm Location</h3></div>
+      <div id="mini-map" style="height:250px;" class="map-wrap"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header">
+      <h3 class="card-title">🛒 Farmer Marketplace</h3>
+      <span class="text-sm text-gray">Live listings from farmers</span>
+    </div>
+    <div id="listings-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;">
+      <p class="text-gray text-sm">Loading listings...</p>
+    </div>
+  </div>
+</main>
+
+<div class="modal-bg" id="sell-modal">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-header">
+      <h3>List a Product for Sale</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('sell-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Product Name</label>
+      <input id="s-name" class="form-input" type="text" placeholder="e.g. Maize, Tomatoes, Eggs">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Price (ZiG)</label>
+      <input id="s-price" class="form-input" type="number" min="0" step="0.01" placeholder="e.g. 5">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Unit</label>
+      <input id="s-unit" class="form-input" type="text" placeholder="e.g. per kg, per bucket, per head">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Quantity Available</label>
+      <input id="s-qty" class="form-input" type="text" placeholder="e.g. 50 kg, 10 buckets">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description (optional)</label>
+      <textarea id="s-desc" class="form-textarea" rows="2" placeholder="Any extra details..."></textarea>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-primary" id="post-listing-btn">Post Listing</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('sell-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="buy-modal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <h3 id="buy-modal-title">Product Details</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('buy-modal')">✕</button>
+    </div>
+    <div id="buy-modal-body" style="line-height:1.6; color:var(--text);"></div>
+    <div style="margin-top:20px;display:flex;gap:12px;">
+      <button class="btn btn-primary" id="contact-seller-btn">💬 Contact Seller</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('buy-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading, showToast, initOfflineBanner } = FCZ;
+
+  // Initialize Map
+  const miniMap = L.map('mini-map').setView([-19.0, 30.0], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(miniMap);
+
+  initOfflineBanner();
+
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const profile = await loadProfile();
+  hideLoading();
+
+  // Header & Navbar
+  if (typeof renderNavbar === 'function') renderNavbar(getRole());
+  document.getElementById('welcome').textContent = `Welcome, ${profile?.name || 'Farmer'} 👋`;
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-ZW', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  if (profile) {
+    document.getElementById('stat-farm').textContent = profile.farmSize || 0;
+  }
+
+  const user = firebase.auth().currentUser;
+
+  // Stats - Livestock
+  DB.collection('livestock').where('ownerId','==', user.uid).get().then(s => {
+    const total = s.docs.reduce((n, d) => n + (Number(d.data().count) || 1), 0);
+    document.getElementById('stat-livestock').textContent = total;
+  });
+
+  // Stats - Messages
+  DB.collection('messages').where('recipientId','==', user.uid).where('read','==',false).get().then(s => {
+    document.getElementById('stat-messages').textContent = s.size;
+  });
+
+  // Alerts
+  DB.collection('alerts').where('active','==',true).limit(10).get().then(s => {
+    document.getElementById('stat-alerts').textContent = s.size;
+    const list = document.getElementById('alerts-list');
+    if (s.empty) { list.innerHTML = '<p class="text-gray text-sm">No active alerts.</p>'; return; }
+    
+    const sortedAlerts = s.docs.sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0)).slice(0, 5);
+    
+    list.innerHTML = sortedAlerts.map(d => {
+      const a = d.data();
+      const sevClass = { low:'badge-info', medium:'badge-warning', high:'badge-danger', critical:'badge-danger' }[a.severity] || 'badge-neutral';
+      return `<div class="notif-item unread">
+                <div class="notif-icon">⚠️</div>
+                <div>
+                  <strong>${a.title}</strong>
+                  <p class="text-sm text-gray">${a.message}</p>
+                  <span class="badge ${sevClass}">${a.severity || 'info'}</span>
+                </div>
+              </div>`;
+    }).join('');
+  });
+
+  // Weather Logic
+  async function loadWeather(district) {
+    try {
+      // Weather served through our Express server — API key stays server-side
+      const res = await fetch('/api/weather?district=' + encodeURIComponent(district || 'Harare'));
+      if (!res.ok) throw new Error('Weather fetch failed');
+      const w = await res.json();
+      document.getElementById('weather-location').textContent = w.city + ', Zimbabwe';
+      document.getElementById('weather-body').innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<img src="https://openweathermap.org/img/wn/' + w.icon + '@2x.png" style="width:56px;height:56px;">' +
+          '<div>' +
+            '<div style="font-size:2rem;font-weight:700;color:var(--green-dark);">' + w.temp + '°C</div>' +
+            '<div style="font-size:.9rem;text-transform:capitalize;">' + w.description + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">💧 Humidity: <strong>' + w.humidity + '%</strong></p>' +
+          '<p class="text-sm">🌡️ Feels like: <strong>' + w.feelsLike + '°C</strong></p>' +
+          '<p class="text-sm">💨 Wind: <strong>' + w.windSpeed + ' m/s</strong></p>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">🌅 Today low: <strong>' + w.todayMin + '°C</strong></p>' +
+          '<p class="text-sm">🌇 Today high: <strong>' + w.todayMax + '°C</strong></p>' +
+          '<p class="text-sm">☁️ Clouds: <strong>' + w.clouds + '%</strong></p>' +
+        '</div>';
+    } catch (e) {
+      document.getElementById('weather-body').innerHTML = '<p class="text-gray text-sm">Weather unavailable.</p>';
+    }
+  }
+  loadWeather(profile?.district);
+
+  // Map Positioning
+  if (profile?.gpsLat && profile?.gpsLng) {
+    L.marker([profile.gpsLat, profile.gpsLng]).addTo(miniMap).bindPopup(`${profile.name}'s Farm`).openPopup();
+    miniMap.setView([profile.gpsLat, profile.gpsLng], 13);
+  }
+  setTimeout(() => miniMap.invalidateSize(), 400);
+
+  // Marketplace Logic
+  async function loadListings() {
+    const grid = document.getElementById('listings-grid');
+    try {
+      const snap = await DB.collection('listings').where('active','==',true).limit(20).get();
+      if (snap.empty) {
+        grid.innerHTML = '<p class="text-gray text-sm" style="padding:16px;">No listings available yet.</p>';
+        return;
+      }
+      const sorted = snap.docs.sort((a,b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
+      grid.innerHTML = sorted.map(d => {
+        const l = d.data();
+        const isOwn = l.sellerId === user.uid;
+        return `<div style="background:var(--white); border: 1px solid #eee; border-radius:var(--radius);padding:16px; box-shadow: var(--shadow);">
+                  <div style="display:flex;justify-content:space-between; align-items: flex-start;">
+                    <strong>${l.name}</strong>
+                    <div style="color:var(--green-dark);font-weight:700;">ZiG ${Number(l.price).toLocaleString()}</div>
+                  </div>
+                  <p class="text-sm text-gray">Unit: ${l.unit || 'N/A'}</p>
+                  <p class="text-sm text-gray" style="margin-bottom:12px;">by ${l.sellerName}</p>
+                  <div style="display:flex;gap:8px;">
+                    ${!isOwn ? `<button class="btn btn-sm btn-primary" onclick="openBuyModal('${d.id}')">🛍️ Buy</button>` : ''}
+                    ${isOwn ? `<button class="btn btn-sm btn-danger" onclick="removeListing('${d.id}')">Remove</button>` : ''}
+                  </div>
+                </div>`;
+      }).join('');
+    } catch (e) { grid.innerHTML = 'Error loading marketplace.'; }
+  }
+  loadListings();
+
+  // Modals & Actions
+  document.getElementById('sell-btn').onclick = () => FCZ.openModal('sell-modal');
+  document.getElementById('buy-btn').onclick = () => document.getElementById('listings-grid').scrollIntoView({ behavior: 'smooth' });
+
+  document.getElementById('post-listing-btn').onclick = async () => {
+    const data = {
+      name: document.getElementById('s-name').value.trim(),
+      price: parseFloat(document.getElementById('s-price').value),
+      unit: document.getElementById('s-unit').value.trim(),
+      quantity: document.getElementById('s-qty').value.trim(),
+      description: document.getElementById('s-desc').value.trim(),
+      sellerId: user.uid,
+      sellerName: profile.name || 'Farmer',
+      active: true,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (!data.name || isNaN(data.price)) { showToast('Please fill all fields correctly', 'warning'); return; }
+
+    try {
+      await DB.collection('listings').add(data);
+      showToast('Product listed successfully!', 'success');
+      FCZ.closeModal('sell-modal');
+      loadListings();
+    } catch (e) { showToast('Error posting listing', 'error'); }
+  };
+
+  window.openBuyModal = (docId) => {
+    DB.collection('listings').doc(docId).get().then(d => {
+      const l = d.data();
+      document.getElementById('buy-modal-title').textContent = l.name;
+      document.getElementById('buy-modal-body').innerHTML = `
+        <div style="margin-bottom:10px;">
+          <p><strong>Seller:</strong> ${l.sellerName}</p>
+          <p><strong>Price:</strong> ZiG ${l.price} / ${l.unit || 'unit'}</p>
+          <p><strong>Stock:</strong> ${l.quantity || 'Contact for info'}</p>
+        </div>
+        <p style="font-size:0.9rem; color: #666;">${l.description || 'No additional description provided.'}</p>
+      `;
+      document.getElementById('contact-seller-btn').onclick = () => window.location.href = `messages.html?to=${l.sellerId}`;
+      FCZ.openModal('buy-modal');
+    });
+  };
+
+  window.removeListing = async (docId) => {
+    if (confirm('Are you sure you want to remove this listing?')) {
+      await DB.collection('listings').doc(docId).update({ active: false });
+      loadListings();
+    }
+  };
+})();
+</script>
+</body>
+</html>

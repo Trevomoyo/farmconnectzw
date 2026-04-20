@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farm Map — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline — map data may be limited</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-16">
+    <div>
+      <h1>Interactive Farm Map</h1>
+      <p class="text-gray">Farmers, officers, livestock and district zones</p>
+    </div>
+    <button class="btn btn-primary" id="locate-btn">📍 My Location</button>
+  </div>
+
+  <!-- Layer toggles -->
+  <div class="card mb-16">
+    <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.92rem;">
+        <input type="checkbox" id="show-farmers" checked> 🐄 Farmers
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.92rem;">
+        <input type="checkbox" id="show-officers" checked> 👨‍🌾 Officers
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.92rem;">
+        <input type="checkbox" id="show-zones"> 🗺️ Districts
+      </label>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div class="card">
+    <div id="main-map" style="height:560px;" class="map-wrap"></div>
+  </div>
+
+  <!-- Legend -->
+  <div class="card" style="margin-top:16px;">
+    <h3 class="card-title mb-16">Legend</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+      <div style="display:flex;align-items:center;gap:8px;">🐄 <div><strong>Farmer</strong><p class="text-sm text-gray">Registered farmer location</p></div></div>
+      <div style="display:flex;align-items:center;gap:8px;">👨‍🌾 <div><strong>Officer</strong><p class="text-sm text-gray">Extension officer coverage</p></div></div>
+      <div style="display:flex;align-items:center;gap:8px;">📍 <div><strong>You</strong><p class="text-sm text-gray">Your current location</p></div></div>
+    </div>
+  </div>
+</main>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+// ── Init Leaflet IMMEDIATELY — never wait for auth ────────────────────────────
+const map = L.map('main-map').setView([-19.0, 29.8], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map);
+L.control.scale({ position: 'bottomright' }).addTo(map);
+
+const DISTRICTS = [
+  { name:'Harare',   c:[-17.8252,31.0335] }, { name:'Bulawayo', c:[-20.15,28.5833] },
+  { name:'Mutare',   c:[-18.97,32.65] },     { name:'Gweru',    c:[-19.45,29.8333] },
+  { name:'Chinhoyi', c:[-17.0333,30.0667] }, { name:'Masvingo', c:[-20.0667,30.8333] },
+  { name:'Kwekwe',   c:[-18.9333,29.8167] }, { name:'Bindura',  c:[-17.3,31.3] }
+];
+
+let farmerMarkers  = [];
+let officerMarkers = [];
+let zoneCircles    = [];
+
+function makeIcon(emoji) {
+  return L.divIcon({ className:'', html:`<span style="font-size:22px;line-height:1;">${emoji}</span>`, iconSize:[28,28], iconAnchor:[14,14] });
+}
+
+function toggleLayer(markers, visible) {
+  markers.forEach(m => visible ? map.addLayer(m) : map.removeLayer(m));
+}
+
+function drawZones(visible) {
+  zoneCircles.forEach(c => map.removeLayer(c));
+  zoneCircles = [];
+  if (!visible) return;
+  DISTRICTS.forEach(d => {
+    const c = L.circle(d.c, { radius:18000, color:'#2D5A27', fillColor:'#2D5A27', fillOpacity:.07, weight:1.5 })
+      .addTo(map).bindPopup(`<strong>${d.name} District</strong>`);
+    zoneCircles.push(c);
+  });
+}
+
+document.getElementById('show-farmers').addEventListener('change',  e => toggleLayer(farmerMarkers, e.target.checked));
+document.getElementById('show-officers').addEventListener('change', e => toggleLayer(officerMarkers, e.target.checked));
+document.getElementById('show-zones').addEventListener('change',    e => drawZones(e.target.checked));
+
+document.getElementById('locate-btn').addEventListener('click', () => {
+  if (!('geolocation' in navigator)) { FCZ.showToast('Geolocation not supported', 'error'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    const { latitude: lat, longitude: lng } = pos.coords;
+    L.marker([lat, lng], { icon: makeIcon('📍') }).addTo(map).bindPopup('Your location').openPopup();
+    map.setView([lat, lng], 14);
+  }, () => FCZ.showToast('Could not get location. Enable GPS.', 'error'));
+});
+
+// ── Auth + data ───────────────────────────────────────────────────────────────
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  FCZ.showLoading('Checking auth…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  FCZ.hideLoading();
+  renderNavbar(getRole());
+
+  // Load farmers
+  DB.collection('users').where('role','==','farmer').get().then(snap => {
+    snap.docs.forEach(d => {
+      const u = d.data();
+      if (!u.gpsLat || !u.gpsLng) return;
+      const m = L.marker([u.gpsLat, u.gpsLng], { icon: makeIcon('🐄') })
+        .addTo(map)
+        .bindPopup(`<strong>${u.name || 'Farmer'}</strong><br>${u.district || ''}<br>
+          <a href="messages.html?to=${d.id}" class="btn btn-sm btn-primary" style="margin-top:8px;display:inline-block;">Contact</a>`);
+      farmerMarkers.push(m);
+    });
+  });
+
+  // Load officers
+  DB.collection('users').where('role','==','extension_officer').get().then(snap => {
+    snap.docs.forEach(d => {
+      const u = d.data();
+      if (!u.gpsLat || !u.gpsLng) return;
+      const m = L.marker([u.gpsLat, u.gpsLng], { icon: makeIcon('👨‍🌾') })
+        .addTo(map)
+        .bindPopup(`<strong>${u.name || 'Officer'}</strong><br>${u.district || ''}`);
+      officerMarkers.push(m);
+    });
+  });
+
+  setTimeout(() => map.invalidateSize(), 300);
+})();
+</script>
+</body>
+</html>

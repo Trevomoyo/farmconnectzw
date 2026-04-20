@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Profile — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header mb-24">
+    <h1>My Profile</h1>
+    <p class="text-gray">Manage your account and farm details</p>
+  </div>
+
+  <div class="profile-layout">
+
+    <!-- Profile card -->
+    <div>
+      <div class="card text-center">
+        <div class="avatar-circle" id="avatar">?</div>
+        <h2 id="profile-name" style="margin-bottom:4px;">—</h2>
+        <p class="text-gray text-sm" id="profile-email">—</p>
+        <span class="badge badge-success" id="profile-role" style="margin-top:8px;">—</span>
+        <hr class="divider">
+        <p class="text-sm text-gray">District: <strong id="profile-district">—</strong></p>
+        <p class="text-sm text-gray" style="margin-top:4px;">Phone: <strong id="profile-phone">—</strong></p>
+        <p class="text-sm text-gray" style="margin-top:4px;">Member since: <strong id="profile-joined">—</strong></p>
+        <hr class="divider">
+        <button class="btn btn-outline btn-full" id="reset-pw-btn">🔒 Reset Password</button>
+        <button class="btn btn-danger btn-full" style="margin-top:10px;" data-action="logout">Logout</button>
+      </div>
+    </div>
+
+    <!-- Edit form -->
+    <div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Edit Details</h3></div>
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input id="f-name" class="form-input" type="text">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone Number</label>
+          <input id="f-phone" class="form-input" type="tel" placeholder="07X XXX XXXX">
+        </div>
+        <div class="form-group">
+          <label class="form-label">District</label>
+          <select id="f-district" class="form-select">
+            <option value="">Select district…</option>
+            <option>Harare</option><option>Bulawayo</option><option>Mutare</option>
+            <option>Gweru</option><option>Kwekwe</option><option>Chinhoyi</option>
+            <option>Masvingo</option><option>Bindura</option><option>Kadoma</option>
+            <option>Zvishavane</option><option>Other</option>
+          </select>
+        </div>
+
+        <!-- Farmer-only fields -->
+        <div id="farmer-fields">
+          <div class="form-group">
+            <label class="form-label">Farm Size (hectares)</label>
+            <input id="f-farmsize" class="form-input" type="number" min="0" step="0.1" placeholder="e.g. 5.5">
+          </div>
+          <div class="form-group">
+            <label class="form-label">GPS Location</label>
+            <div style="display:flex;gap:10px;">
+              <input id="f-lat" class="form-input" type="number" step="any" placeholder="Latitude">
+              <input id="f-lng" class="form-input" type="number" step="any" placeholder="Longitude">
+              <button class="btn btn-outline" id="gps-btn">📍 Get</button>
+            </div>
+          </div>
+        </div>
+
+        <button id="save-profile-btn" class="btn btn-primary" style="margin-top:8px;">Save Changes</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, Auth, requireAuth, loadProfile, getRole, getCurrentUser, showLoading, hideLoading, showToast, fmtDate, initials, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const profile = await loadProfile();
+  hideLoading();
+  renderNavbar(getRole());
+
+  const user = getCurrentUser();
+  const role = getRole();
+
+  // Populate display
+  document.getElementById('avatar').textContent         = initials(profile?.name || user.displayName || '?');
+  document.getElementById('profile-name').textContent   = profile?.name || user.displayName || '—';
+  document.getElementById('profile-email').textContent  = user.email || '—';
+  document.getElementById('profile-role').textContent   = { farmer:'Farmer', extension_officer:'Extension Officer', administrator:'Administrator' }[role] || role;
+  document.getElementById('profile-district').textContent = profile?.district || '—';
+  document.getElementById('profile-phone').textContent    = profile?.phone || '—';
+  document.getElementById('profile-joined').textContent   = fmtDate(profile?.createdAt);
+
+  // Populate form
+  document.getElementById('f-name').value     = profile?.name || '';
+  document.getElementById('f-phone').value    = profile?.phone || '';
+  document.getElementById('f-district').value = profile?.district || '';
+
+  // Farmer-only
+  if (role !== 'farmer') {
+    document.getElementById('farmer-fields').style.display = 'none';
+  } else {
+    document.getElementById('f-farmsize').value = profile?.farmSize || '';
+    document.getElementById('f-lat').value       = profile?.gpsLat   || '';
+    document.getElementById('f-lng').value       = profile?.gpsLng   || '';
+  }
+
+  // Get GPS
+  document.getElementById('gps-btn')?.addEventListener('click', () => {
+    if (!('geolocation' in navigator)) { showToast('GPS not available', 'error'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+      document.getElementById('f-lat').value = pos.coords.latitude.toFixed(6);
+      document.getElementById('f-lng').value = pos.coords.longitude.toFixed(6);
+      showToast('Location captured', 'success');
+    }, () => showToast('Could not get location', 'error'));
+  });
+
+  // Save
+  document.getElementById('save-profile-btn').addEventListener('click', async () => {
+    const updates = {
+      name:     document.getElementById('f-name').value.trim(),
+      phone:    document.getElementById('f-phone').value.trim(),
+      district: document.getElementById('f-district').value
+    };
+    if (!updates.name) { showToast('Name is required.', 'warning'); return; }
+
+    if (role === 'farmer') {
+      const lat = parseFloat(document.getElementById('f-lat').value);
+      const lng = parseFloat(document.getElementById('f-lng').value);
+      const fs  = parseFloat(document.getElementById('f-farmsize').value);
+      if (!isNaN(lat)) updates.gpsLat = lat;
+      if (!isNaN(lng)) updates.gpsLng = lng;
+      if (!isNaN(fs))  updates.farmSize = fs;
+    }
+
+    const btn = document.getElementById('save-profile-btn');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      await DB.collection('users').doc(user.uid).set(updates, { merge: true });
+      await user.updateProfile({ displayName: updates.name });
+      FCZ.setUserProfile({ ...profile, ...updates });
+      // Refresh display
+      document.getElementById('avatar').textContent         = initials(updates.name);
+      document.getElementById('profile-name').textContent   = updates.name;
+      document.getElementById('profile-district').textContent = updates.district || '—';
+      document.getElementById('profile-phone').textContent    = updates.phone || '—';
+      showToast('Profile saved!', 'success');
+    } catch (e) {
+      showToast('Failed: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Save Changes'; btn.disabled = false;
+    }
+  });
+
+  // Reset password
+  document.getElementById('reset-pw-btn').addEventListener('click', async () => {
+    if (!user.email) { showToast('No email on account', 'error'); return; }
+    try {
+      await Auth.sendPasswordResetEmail(user.email);
+      showToast('Reset link sent to ' + user.email, 'success');
+    } catch (e) { showToast('Failed: ' + e.message, 'error'); }
+  });
+})();
+</script>
+</body>
+</html>

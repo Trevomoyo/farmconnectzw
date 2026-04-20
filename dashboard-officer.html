@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Officer Dashboard — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header">
+    <h1 id="welcome">Welcome, Officer 👋</h1>
+    <p id="today-date" class="text-gray"></p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid mb-24">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-farmers">—</div>
+      <div class="stat-label">Farmers in District</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-requests">—</div>
+      <div class="stat-label">Pending Requests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-messages">—</div>
+      <div class="stat-label">Unread Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-label">Active Alerts</div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+    <div class="action-grid">
+      <a href="map.html"           class="btn btn-primary">🗺️ District Map</a>
+      <a href="messages.html"      class="btn btn-secondary">💬 Messages</a>
+      <a href="market-prices.html" class="btn btn-accent">📊 Market Prices</a>
+      <a href="knowledge-hub.html" class="btn btn-outline">📚 Resources</a>
+      <a href="notifications.html" class="btn btn-outline">🔔 Alerts</a>
+      <a href="profile.html"       class="btn btn-outline">👤 Profile</a>
+    </div>
+  </div>
+
+  <!-- Assistance Requests -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Assistance Requests</h3>
+      <span id="req-count" class="badge badge-warning">0 pending</span>
+    </div>
+    <div id="requests-list"><p class="text-gray text-sm">Loading…</p></div>
+  </div>
+</main>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showLoading, hideLoading, fmtDate, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading dashboard…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const profile = await loadProfile();
+
+  // Role guard
+  if (getRole() === 'farmer') { window.location.href = 'dashboard-farmer.html'; return; }
+  if (getRole() === 'administrator') { window.location.href = 'dashboard-admin.html'; return; }
+
+  hideLoading();
+  renderNavbar(getRole());
+
+  document.getElementById('welcome').textContent = `Welcome, ${profile?.name || 'Officer'} 👋`;
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-ZW', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const user = getCurrentUser();
+  const district = profile?.district || '';
+
+  // Farmers in district
+  if (district) {
+    DB.collection('users').where('role','==','farmer').where('district','==',district).get()
+      .then(s => { document.getElementById('stat-farmers').textContent = s.size; });
+  }
+
+  // Pending assistance requests
+  DB.collection('assistanceRequests').where('assignedOfficerId','==',user.uid).where('status','==','pending').get()
+    .then(s => {
+      document.getElementById('stat-requests').textContent = s.size;
+      document.getElementById('req-count').textContent = `${s.size} pending`;
+      const list = document.getElementById('requests-list');
+      if (s.empty) { list.innerHTML = '<p class="text-gray text-sm">No pending requests.</p>'; return; }
+      list.innerHTML = s.docs.map(d => {
+        const r = d.data();
+        return `<div class="notif-item unread">
+          <div class="notif-icon">📋</div>
+          <div style="flex:1">
+            <strong>${r.subject || 'Assistance Request'}</strong>
+            <p class="text-sm text-gray">${r.message?.slice(0,100) || ''}…</p>
+            <p class="text-sm text-gray">${fmtDate(r.createdAt)}</p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="resolveRequest('${d.id}')">Respond</button>
+        </div>`;
+      }).join('');
+    }).catch(() => {
+      document.getElementById('requests-list').innerHTML = '<p class="text-gray text-sm">Could not load requests.</p>';
+    });
+
+  // Unread messages
+  DB.collection('messages').where('recipientId','==',user.uid).where('read','==',false).get()
+    .then(s => { document.getElementById('stat-messages').textContent = s.size; });
+
+  // Alerts
+  DB.collection('alerts').where('active','==',true).get()
+    .then(s => { document.getElementById('stat-alerts').textContent = s.size; });
+})();
+
+async function resolveRequest(id) {
+  window.location.href = `messages.html`;
+}
+</script>
+</body>
+</html>

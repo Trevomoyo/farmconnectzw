@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alerts — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-24">
+    <div>
+      <h1>Alerts &amp; Notifications</h1>
+      <p class="text-gray">System alerts and agricultural advisories</p>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <select id="type-filter" class="form-select" style="width:auto;">
+        <option value="">All Types</option>
+        <option value="weather">Weather</option>
+        <option value="disease">Disease</option>
+        <option value="market">Market</option>
+        <option value="security">Security</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="alerts-container"><p class="text-gray">Loading alerts…</p></div>
+</main>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+const TYPE_ICON = { weather:'🌧️', disease:'🦠', market:'📊', security:'🔒' };
+const SEV_CLASS = { low:'badge-info', medium:'badge-warning', high:'badge-danger', critical:'badge-danger' };
+
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading, fmtDate, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading alerts…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  hideLoading();
+  renderNavbar(getRole());
+
+  let allAlerts = [];
+
+  function renderAlerts(alerts) {
+    const container = document.getElementById('alerts-container');
+    if (!alerts.length) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">🔔</div><p>No alerts at the moment.</p></div>';
+      return;
+    }
+    container.innerHTML = alerts.map(a => `
+      <div class="notif-item ${a.active ? 'unread' : ''}">
+        <div class="notif-icon">${TYPE_ICON[a.type] || '⚠️'}</div>
+        <div style="flex:1;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <strong>${a.title}</strong>
+            <div style="display:flex;gap:6px;flex-shrink:0;">
+              <span class="badge ${SEV_CLASS[a.severity]||'badge-neutral'}">${a.severity||''}</span>
+              ${a.active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-neutral">Resolved</span>'}
+            </div>
+          </div>
+          <p class="text-sm" style="margin-top:4px;">${a.message}</p>
+          <p class="text-sm text-gray" style="margin-top:4px;">${a.district ? a.district+' · ' : ''}${fmtDate(a.createdAt)}</p>
+        </div>
+      </div>`).join('');
+  }
+
+  function applyFilter() {
+    const type = document.getElementById('type-filter').value;
+    renderAlerts(type ? allAlerts.filter(a => a.type === type) : allAlerts);
+  }
+
+  try {
+    const snap = await DB.collection('alerts').orderBy('createdAt','desc').limit(50).get();
+    allAlerts = snap.docs.map(d => d.data());
+    applyFilter();
+  } catch (e) {
+    // Fallback static alerts
+    allAlerts = [
+      { title:'Heavy Rainfall Warning', message:'Heavy rains expected in northern regions this week. Secure livestock.', type:'weather', severity:'medium', district:'Northern Districts', active:true, createdAt:null },
+      { title:'Market Update', message:'Maize prices have increased by 5% across major markets.', type:'market', severity:'low', district:'National', active:true, createdAt:null }
+    ];
+    applyFilter();
+  }
+
+  document.getElementById('type-filter').addEventListener('change', applyFilter);
+})();
+</script>
+</body>
+</html>

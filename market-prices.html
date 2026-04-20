@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Prices — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline — prices may be outdated</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-24">
+    <div>
+      <h1>Market Prices</h1>
+      <p class="text-gray">Current commodity prices across Zimbabwe</p>
+    </div>
+    <select id="district-filter" class="form-select" style="width:auto;">
+      <option value="">All Districts</option>
+      <option>Harare</option><option>Bulawayo</option><option>Mutare</option>
+      <option>Gweru</option><option>Kwekwe</option><option>Chinhoyi</option>
+      <option>Masvingo</option><option>Bindura</option>
+    </select>
+  </div>
+
+  <!-- Admin: Add price -->
+  <div class="card mb-24 hidden" id="admin-panel">
+    <div class="card-header"><h3 class="card-title">Update Price</h3></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;">
+      <input id="p-commodity" class="form-input" type="text" placeholder="Commodity (e.g. maize)">
+      <input id="p-price"     class="form-input" type="number" placeholder="Price (ZiG)">
+      <input id="p-unit"      class="form-input" type="text" placeholder="Unit (e.g. per kg)">
+      <select id="p-district" class="form-select">
+        <option>Harare</option><option>Bulawayo</option><option>Mutare</option>
+        <option>Gweru</option><option>Kwekwe</option><option>Chinhoyi</option>
+        <option>Masvingo</option><option>Bindura</option>
+      </select>
+      <select id="p-trend" class="form-select">
+        <option value="up">↑ Rising</option>
+        <option value="stable">→ Stable</option>
+        <option value="down">↓ Falling</option>
+      </select>
+      <button id="p-save" class="btn btn-primary">Save Price</button>
+    </div>
+  </div>
+
+  <!-- Price grid -->
+  <div id="prices-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;">
+    <p class="text-gray">Loading prices…</p>
+  </div>
+</main>
+
+<!-- Static fallback prices (shown if Firestore is empty) -->
+<template id="fallback-prices">
+  <div data-prices='[
+    {"commodity":"Maize","price":9,"unit":"per bucket","district":"Harare","trend":"up"},
+    {"commodity":"Soya Beans","price":8,"unit":"per kg","district":"Harare","trend":"up"},
+    {"commodity":"Groundnuts","price":5,"unit":"per kg","district":"Harare","trend":"stable"},
+    {"commodity":"Cattle","price":450,"unit":"per head","district":"Harare","trend":"up"},
+    {"commodity":"Goats","price":50,"unit":"per head","district":"Harare","trend":"stable"},
+    {"commodity":"Poultry","price":5,"unit":"per bird","district":"Harare","trend":"down"}
+  ]'></div>
+</template>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+const TREND_ICON  = { up:'↑', down:'↓', stable:'→' };
+const TREND_CLASS = { up:'trend-up', down:'trend-down', stable:'trend-stable' };
+const COMMODITY_ICON = { maize:'🌽', cattle:'🐄', goats:'🐐', poultry:'🐔', soya:'🫘', groundnuts:'🥜', wheat:'🌾' };
+
+function iconFor(name) {
+  const key = Object.keys(COMMODITY_ICON).find(k => name.toLowerCase().includes(k));
+  return key ? COMMODITY_ICON[key] : '🏷️';
+}
+
+function renderPrices(prices) {
+  const grid = document.getElementById('prices-grid');
+  if (!prices.length) {
+    grid.innerHTML = '<p class="text-gray">No prices found for this filter.</p>';
+    return;
+  }
+  grid.innerHTML = prices.map(p => `
+    <div class="price-card">
+      <div>
+        <div style="font-size:1.8rem;margin-bottom:4px;">${iconFor(p.commodity)}</div>
+        <strong>${p.commodity}</strong>
+        <p class="text-sm text-gray">${p.district} · ${p.unit}</p>
+      </div>
+      <div style="text-align:right;">
+        <div class="price-value">$${Number(p.price).toLocaleString()}</div>
+        <div class="price-trend ${TREND_CLASS[p.trend]||''}">
+          ${TREND_ICON[p.trend]||'→'} ${p.trend||'stable'}
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading, showToast, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading prices…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  hideLoading();
+  renderNavbar(getRole());
+
+  // Show admin panel for admins
+  if (getRole() === 'administrator') {
+    document.getElementById('admin-panel').classList.remove('hidden');
+  }
+
+  let allPrices = [];
+
+  function applyFilter() {
+    const district = document.getElementById('district-filter').value;
+    renderPrices(district ? allPrices.filter(p => p.district === district) : allPrices);
+  }
+
+  // Load prices from Firestore
+  try {
+    const snap = await DB.collection('marketPrices').orderBy('updatedAt','desc').get();
+    if (snap.empty) {
+      // Use fallback static data
+      const tmpl = document.getElementById('fallback-prices').content.querySelector('[data-prices]');
+      allPrices = JSON.parse(tmpl.dataset.prices);
+    } else {
+      allPrices = snap.docs.map(d => d.data());
+    }
+    applyFilter();
+  } catch (e) {
+    // Firestore permission error or offline — use fallback
+    const tmpl = document.getElementById('fallback-prices').content.querySelector('[data-prices]');
+    allPrices = JSON.parse(tmpl.dataset.prices);
+    applyFilter();
+    showToast('Using cached prices', 'info');
+  }
+
+  document.getElementById('district-filter').addEventListener('change', applyFilter);
+
+  // Admin: save price
+  document.getElementById('p-save')?.addEventListener('click', async () => {
+    const commodity = document.getElementById('p-commodity').value.trim();
+    const price     = parseFloat(document.getElementById('p-price').value);
+    const unit      = document.getElementById('p-unit').value.trim();
+    const district  = document.getElementById('p-district').value;
+    const trend     = document.getElementById('p-trend').value;
+
+    if (!commodity || !price || !unit) { showToast('Fill in all fields.', 'warning'); return; }
+    const btn = document.getElementById('p-save');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      await DB.collection('marketPrices').add({
+        commodity, price, unit, district, trend,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Price saved!', 'success');
+      ['p-commodity','p-price','p-unit'].forEach(id => { document.getElementById(id).value=''; });
+      // Reload
+      const snap = await DB.collection('marketPrices').orderBy('updatedAt','desc').get();
+      allPrices = snap.docs.map(d => d.data());
+      applyFilter();
+    } catch (e) {
+      showToast('Failed: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Save Price'; btn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>

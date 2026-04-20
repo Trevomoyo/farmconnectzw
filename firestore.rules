@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- HELPER FUNCTIONS ---
+    function isSignedIn()      { return request.auth != null; }
+    function isOwner(uid)      { return request.auth.uid == uid; }
+    
+    // Gets the current user's document from the 'users' collection
+    function getUserData()     { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    
+    // Role Checks
+    function isAdmin()         { return isSignedIn() && getUserData().role == 'administrator'; }
+    function isOfficer()       { return isSignedIn() && getUserData().role == 'extension_officer'; }
+    function isFarmer()        { return isSignedIn() && getUserData().role == 'farmer'; }
+
+    // --- COLLECTIONS ---
+
+    // Users: Allow searching for recipients and profile management
+    match /users/{uid} {
+      allow read:   if isSignedIn(); 
+      allow create: if isSignedIn() && isOwner(uid);
+      allow update: if isSignedIn() && (isOwner(uid) || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Listings (Marketplace)
+    match /listings/{docId} {
+      allow read:   if isSignedIn();
+      allow create: if isFarmer() && request.resource.data.sellerId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.sellerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.sellerId == request.auth.uid || isAdmin());
+    }
+
+    // Livestock
+    match /livestock/{docId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // UPDATED: Messages (The "Chat-style" Logic)
+    match /messages/{msgId} {
+      // 1. A user can read a message if they are either the sender OR the recipient
+      allow read: if isSignedIn() && (
+        resource.data.senderId == request.auth.uid || 
+        resource.data.recipientId == request.auth.uid
+      );
+      
+      // 2. A user can only create a message if they identify themselves as the sender
+      allow create: if isSignedIn() && 
+                    request.resource.data.senderId == request.auth.uid;
+      
+      // 3. Allow marking as read (update) if recipient, or general admin cleanup
+      allow update: if isSignedIn() && (
+        resource.data.recipientId == request.auth.uid || 
+        isAdmin()
+      ); 
+      
+      allow delete: if isAdmin();
+    }
+
+    // Alerts
+    match /alerts/{docId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAdmin() || isOfficer();
+    }
+
+    // Market prices
+    match /marketPrices/{docId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAdmin();
+    }
+
+    // Knowledge articles
+    match /knowledgeArticles/{docId} {
+      allow read:   if isSignedIn();
+      allow write:  if isAdmin() || isOfficer();
+    }
+
+    // Assistance requests
+    match /assistanceRequests/{docId} {
+      allow read:   if isSignedIn() && (
+        resource.data.farmerId == request.auth.uid || 
+        resource.data.assignedOfficerId == request.auth.uid || 
+        isAdmin()
+      );
+      allow create: if isFarmer();
+      allow update: if isOfficer() || isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Livestock — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-24">
+    <div>
+      <h1>Livestock Tracking</h1>
+      <p class="text-gray">Manage and locate your animals</p>
+    </div>
+    <button class="btn btn-primary" id="add-animal-btn">+ Add Animal</button>
+  </div>
+
+  <div class="livestock-layout">
+
+    <!-- Animal List -->
+    <div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Your Animals</h3></div>
+        <div id="animal-list"><p class="text-gray text-sm">Loading…</p></div>
+      </div>
+    </div>
+
+    <!-- Map -->
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Tracking Map</h3></div>
+      <div id="tracking-map" style="height:420px;" class="map-wrap"></div>
+    </div>
+
+  </div>
+</main>
+
+<!-- Add Animal Modal -->
+<div class="modal-bg" id="add-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Animal</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('add-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Animal ID / Tag</label>
+      <input id="a-id" class="form-input" type="text" placeholder="e.g. COW-001">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select id="a-type" class="form-select">
+        <option value="cattle">Cattle</option>
+        <option value="goats">Goats</option>
+        <option value="sheep">Sheep</option>
+        <option value="poultry">Poultry</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Breed (optional)</label>
+      <input id="a-breed" class="form-input" type="text" placeholder="e.g. Brahman">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Count</label>
+      <input id="a-count" class="form-input" type="number" value="1" min="1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Age (years, optional)</label>
+      <input id="a-age" class="form-input" type="number" min="0" placeholder="2">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-animal-btn">Save Animal</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('add-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+// ── Map init — always first, never blocked ────────────────────────────────────
+const trackingMap = L.map('tracking-map').setView([-19.0, 29.8], 8);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OSM' }).addTo(trackingMap);
+
+const ICONS = { cattle:'🐄', goats:'🐐', sheep:'🐑', poultry:'🐔' };
+function animalIcon(type) {
+  return L.divIcon({ className:'', html:`<span style="font-size:22px;">${ICONS[type]||'🐾'}</span>`, iconSize:[28,28], iconAnchor:[14,14] });
+}
+
+let markers = {};
+
+function plotAnimal(id, data) {
+  if (!data.lastLat || !data.lastLng) return;
+  if (markers[id]) trackingMap.removeLayer(markers[id]);
+  markers[id] = L.marker([data.lastLat, data.lastLng], { icon: animalIcon(data.type) })
+    .addTo(trackingMap)
+    .bindPopup(`<strong>${data.animalId}</strong><br>${data.type} · ${data.breed||''}<br>Count: ${data.count}`);
+}
+
+// ── Auth + data ───────────────────────────────────────────────────────────────
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showLoading, hideLoading, showToast, openModal, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  hideLoading();
+  renderNavbar(getRole());
+  setTimeout(() => trackingMap.invalidateSize(), 300);
+
+  const user = getCurrentUser();
+
+  function loadAnimals() {
+    DB.collection('livestock').where('ownerId','==', user.uid).get().then(snap => {
+      const list = document.getElementById('animal-list');
+      if (snap.empty) {
+        list.innerHTML = `<div class="empty-state"><div class="icon">🐾</div><p>No animals registered yet.</p><button class="btn btn-primary" style="margin-top:12px;" id="add-first">Add your first animal</button></div>`;
+        document.getElementById('add-first')?.addEventListener('click', () => openModal('add-modal'));
+        return;
+      }
+      list.innerHTML = snap.docs.map(d => {
+        const a = d.data();
+        return `<div class="animal-card">
+          <div class="animal-icon">${ICONS[a.type]||'🐾'}</div>
+          <div style="flex:1">
+            <strong>${a.animalId}</strong> · ${a.type}
+            ${a.breed ? `<span class="text-gray text-sm"> · ${a.breed}</span>` : ''}
+            <p class="text-sm text-gray">Count: ${a.count} · Age: ${a.age ? a.age+'yr' : '—'}</p>
+          </div>
+          <button class="btn btn-sm btn-outline" onclick="trackMe('${d.id}')">📍 Track</button>
+        </div>`;
+      }).join('');
+      snap.docs.forEach(d => plotAnimal(d.id, d.data()));
+    });
+  }
+
+  loadAnimals();
+
+  // Add animal modal trigger
+  document.getElementById('add-animal-btn').addEventListener('click', () => openModal('add-modal'));
+
+  // Save animal
+  document.getElementById('save-animal-btn').addEventListener('click', async () => {
+    const animalId = document.getElementById('a-id').value.trim();
+    const type     = document.getElementById('a-type').value;
+    const breed    = document.getElementById('a-breed').value.trim();
+    const count    = parseInt(document.getElementById('a-count').value) || 1;
+    const age      = parseInt(document.getElementById('a-age').value) || null;
+
+    if (!animalId) { showToast('Enter an Animal ID.', 'warning'); return; }
+
+    const btn = document.getElementById('save-animal-btn');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      await DB.collection('livestock').add({
+        ownerId: user.uid, animalId, type, breed, count, age,
+        lastLat: null, lastLng: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Animal added!', 'success');
+      FCZ.closeModal('add-modal');
+      ['a-id','a-breed','a-age'].forEach(id => { document.getElementById(id).value = ''; });
+      document.getElementById('a-count').value = '1';
+      loadAnimals();
+    } catch (e) {
+      showToast('Failed: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Save Animal'; btn.disabled = false;
+    }
+  });
+})();
+
+function trackMe(docId) {
+  if (!('geolocation' in navigator)) { FCZ.showToast('GPS not available', 'error'); return; }
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    try {
+      await FCZ.DB.collection('livestock').doc(docId).update({
+        lastLat: lat, lastLng: lng,
+        lastUpdate: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      // Log tracking point
+      await FCZ.DB.collection('livestockTracking').add({
+        livestockId: docId, lat, lng,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      FCZ.showToast('Location updated!', 'success');
+      const snap = await FCZ.DB.collection('livestock').doc(docId).get();
+      plotAnimal(docId, snap.data());
+      trackingMap.setView([lat, lng], 14);
+    } catch (e) { FCZ.showToast('Failed to update: ' + e.message, 'error'); }
+  }, () => FCZ.showToast('Could not get GPS location.', 'error'));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Hub — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-24">
+    <div>
+      <h1>Knowledge Hub</h1>
+      <p class="text-gray">Agricultural guides, seasonal calendars, and best practices</p>
+    </div>
+    <!-- Only visible to admin and officers -->
+    <button class="btn btn-primary hidden" id="add-article-btn">+ Add Article</button>
+  </div>
+
+  <!-- Category filter -->
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+    <button class="btn btn-primary cat-btn active" data-cat="">All</button>
+    <button class="btn btn-outline cat-btn" data-cat="crops">🌽 Crops</button>
+    <button class="btn btn-outline cat-btn" data-cat="livestock">🐄 Livestock</button>
+    <button class="btn btn-outline cat-btn" data-cat="seasonal">📅 Seasonal</button>
+    <button class="btn btn-outline cat-btn" data-cat="diseases">🦠 Diseases</button>
+    <button class="btn btn-outline cat-btn" data-cat="fertilizers">🌱 Fertilizers</button>
+    <button class="btn btn-outline cat-btn" data-cat="weather">🌤️ Weather</button>
+  </div>
+
+  <div id="articles-grid" class="article-grid"></div>
+</main>
+
+<!-- Read Article Modal -->
+<div class="modal-bg" id="article-modal" style="align-items:flex-start;padding-top:40px;">
+  <div class="modal" style="max-width:640px;max-height:80vh;overflow-y:auto;">
+    <div class="modal-header">
+      <h3 id="modal-title">Article</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('article-modal')">✕</button>
+    </div>
+    <p class="text-sm text-gray mb-16" id="modal-meta"></p>
+    <div id="modal-body" style="line-height:1.7;"></div>
+    <!-- Delete button — only shown to admin/officer -->
+    <div id="modal-actions" style="margin-top:20px;display:none;">
+      <button class="btn btn-danger btn-sm" id="delete-article-btn">🗑 Delete Article</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Article Modal -->
+<div class="modal-bg" id="add-modal">
+  <div class="modal" style="max-width:600px;max-height:88vh;overflow-y:auto;">
+    <div class="modal-header">
+      <h3>Add New Article</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('add-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Title</label>
+      <input id="a-title" class="form-input" type="text" placeholder="e.g. Maize Planting Guide">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select id="a-category" class="form-select">
+        <option value="crops">🌽 Crops</option>
+        <option value="livestock">🐄 Livestock</option>
+        <option value="seasonal">📅 Seasonal</option>
+        <option value="diseases">🦠 Diseases</option>
+        <option value="fertilizers">🌱 Fertilizers</option>
+        <option value="weather">🌤️ Weather</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Summary <span class="text-gray">(shown on card)</span></label>
+      <input id="a-summary" class="form-input" type="text" placeholder="One sentence description">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Author</label>
+      <input id="a-author" class="form-input" type="text" placeholder="e.g. Ministry of Agriculture">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Content <span class="text-gray">(HTML supported — use &lt;h3&gt;, &lt;p&gt;, &lt;ul&gt;, &lt;li&gt;)</span></label>
+      <textarea id="a-content" class="form-textarea" rows="10" placeholder="<h3>Introduction</h3>&#10;<p>Write your article content here...</p>&#10;<h3>Section 2</h3>&#10;<p>More content...</p>"></textarea>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-article-btn">Publish Article</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('add-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+const CAT_ICON = { crops:'🌽', livestock:'🐄', seasonal:'📅', diseases:'🦠', fertilizers:'🌱', weather:'🌤️' };
+
+const FALLBACK = [
+  { id:null, title:'Maize Planting Guide', summary:'Best practices for planting maize in Zimbabwe.', category:'crops', author:'Ministry of Agriculture',
+    content:'<h3>Planting Season</h3><p>Plant from mid-October to early December when soil moisture is sufficient. Use certified seed varieties suited to your district.</p><h3>Spacing</h3><p>Space rows 90cm apart and plants 25cm apart for optimal yield.</p><h3>Fertilizer</h3><p>Apply basal fertilizer at planting and top-dress with AN at 4–6 weeks.</p>' },
+  { id:null, title:'Cattle Management Guide', summary:'Essential guidelines for healthy herds.', category:'livestock', author:'Veterinary Services',
+    content:'<h3>Feeding</h3><p>Provide adequate grazing and supplement during dry seasons. Ensure clean water is always available.</p><h3>Vaccination</h3><p>Vaccinate against anthrax, foot-and-mouth, and black-leg annually.</p><h3>Dipping</h3><p>Dip cattle every two weeks during tick season (September–April).</p>' },
+  { id:null, title:'Seasonal Planting Calendar', summary:'When to plant crops throughout the year.', category:'seasonal', author:'Agricultural Extension',
+    content:'<h3>Rainy Season (Nov–Mar)</h3><ul><li>November: Plant maize, sorghum, sunflower</li><li>December: Plant groundnuts, soya beans</li><li>January: Top-dress maize</li></ul><h3>Winter (May–Aug)</h3><ul><li>May: Plant wheat, barley (irrigated areas)</li><li>June: Plant sugar beans</li></ul>' },
+  { id:null, title:'Fall Armyworm Management', summary:'How to identify and control fall armyworm.', category:'diseases', author:'Plant Protection Institute',
+    content:'<h3>Identification</h3><p>Look for ragged leaf damage and frass in the whorl. Young larvae are pale green; older ones darker with a Y-shaped marking on the head.</p><h3>Control</h3><p>Apply registered pesticides early. Biological controls include Bacillus thuringiensis. Report outbreaks to your extension officer.</p>' },
+  { id:null, title:'Soil Fertility Management', summary:'Using fertilizers effectively for better yields.', category:'fertilizers', author:'Agritex',
+    content:'<h3>Soil Testing</h3><p>Test soil every 2-3 years to understand pH and nutrient status.</p><h3>Compound D</h3><p>Use at planting for phosphorus and nitrogen. Apply 200-300kg/ha depending on soil type.</p><h3>Ammonium Nitrate</h3><p>Top-dress at 4-6 weeks after emergence for nitrogen boost.</p>' },
+  { id:null, title:'Understanding Zimbabwe Weather Patterns', summary:'How to read and prepare for seasonal weather.', category:'weather', author:'Meteorological Services',
+    content:'<h3>Rainy Season</h3><p>Zimbabwe receives most rainfall between November and March. The amount varies from 400mm in the south to over 1000mm in the Eastern Highlands.</p><h3>Dry Season</h3><p>May to October is generally dry. Winter temperatures can fall below 5C in highland areas.</p>' }
+];
+
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showToast, openModal, closeModal, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  const role = getRole();
+  const user = getCurrentUser();
+  const canWrite = role === 'administrator' || role === 'extension_officer';
+
+  renderNavbar(role);
+
+  // Show add button for admin and officers
+  if (canWrite) {
+    document.getElementById('add-article-btn').classList.remove('hidden');
+  }
+
+  let articles = [];
+  let activecat = '';
+  let currentArticleId = null;
+
+  function renderArticles() {
+    const grid = document.getElementById('articles-grid');
+    const filtered = activecat ? articles.filter(a => a.category === activecat) : articles;
+    if (!filtered.length) {
+      grid.innerHTML = '<div class="empty-state"><div class="icon">📚</div><p>No articles in this category.</p></div>';
+      return;
+    }
+    grid.innerHTML = filtered.map((a, i) =>
+      '<div class="article-card" onclick="openArticle(' + i + ')">' +
+        '<div class="article-card-img">' + (CAT_ICON[a.category]||'📄') + '</div>' +
+        '<div class="article-card-body">' +
+          '<div class="article-category">' + (a.category||'') + '</div>' +
+          '<h3 style="font-size:1rem;margin-bottom:6px;">' + a.title + '</h3>' +
+          '<p class="text-sm text-gray">' + (a.summary||'') + '</p>' +
+          '<p class="text-sm text-gray" style="margin-top:8px;">By ' + (a.author||'Unknown') + '</p>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  async function loadArticles() {
+    try {
+      const snap = await DB.collection('knowledgeArticles').orderBy('createdAt','desc').get();
+      if (snap.empty) {
+        articles = FALLBACK;
+      } else {
+        articles = snap.docs.map(d => Object.assign({ id: d.id }, d.data()));
+      }
+    } catch (e) {
+      articles = FALLBACK;
+    }
+    renderArticles();
+  }
+
+  await loadArticles();
+
+  // Category buttons
+  document.querySelectorAll('.cat-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.cat-btn').forEach(function(b) {
+        b.classList.remove('btn-primary','active');
+        b.classList.add('btn-outline');
+      });
+      btn.classList.add('btn-primary','active');
+      btn.classList.remove('btn-outline');
+      activecat = btn.dataset.cat;
+      renderArticles();
+    });
+  });
+
+  // Open article to read
+  window.openArticle = function(i) {
+    const list = activecat ? articles.filter(function(x) { return x.category === activecat; }) : articles;
+    const a = list[i];
+    if (!a) return;
+    currentArticleId = a.id || null;
+    document.getElementById('modal-title').textContent = a.title;
+    document.getElementById('modal-meta').textContent  = 'Category: ' + a.category + ' · By ' + (a.author||'Unknown');
+    document.getElementById('modal-body').innerHTML    = a.content || a.summary || '';
+    // Show delete button only for admin/officer and only for Firestore articles (not fallback)
+    const actions = document.getElementById('modal-actions');
+    actions.style.display = (canWrite && currentArticleId) ? 'block' : 'none';
+    openModal('article-modal');
+  };
+
+  // Delete article
+  document.getElementById('delete-article-btn').addEventListener('click', async function() {
+    if (!currentArticleId) return;
+    if (!confirm('Delete this article? This cannot be undone.')) return;
+    try {
+      await DB.collection('knowledgeArticles').doc(currentArticleId).delete();
+      showToast('Article deleted.', 'success');
+      closeModal('article-modal');
+      await loadArticles();
+    } catch (e) {
+      showToast('Failed to delete: ' + e.message, 'error');
+    }
+  });
+
+  // Add article button
+  document.getElementById('add-article-btn').addEventListener('click', function() {
+    openModal('add-modal');
+  });
+
+  // Save article
+  document.getElementById('save-article-btn').addEventListener('click', async function() {
+    const title    = document.getElementById('a-title').value.trim();
+    const category = document.getElementById('a-category').value;
+    const summary  = document.getElementById('a-summary').value.trim();
+    const author   = document.getElementById('a-author').value.trim();
+    const content  = document.getElementById('a-content').value.trim();
+
+    if (!title)   { showToast('Enter a title.', 'warning'); return; }
+    if (!summary) { showToast('Enter a summary.', 'warning'); return; }
+    if (!content) { showToast('Enter article content.', 'warning'); return; }
+
+    const btn = document.getElementById('save-article-btn');
+    btn.textContent = 'Publishing…'; btn.disabled = true;
+
+    try {
+      await DB.collection('knowledgeArticles').add({
+        title, category, summary,
+        author: author || user.displayName || user.email,
+        content,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Article published!', 'success');
+      closeModal('add-modal');
+      // Clear form
+      ['a-title','a-summary','a-author','a-content'].forEach(function(id) {
+        document.getElementById(id).value = '';
+      });
+      await loadArticles();
+    } catch (e) {
+      showToast('Failed to publish: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Publish Article'; btn.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
