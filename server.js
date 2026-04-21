@@ -54,15 +54,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   console.log('✓ Web Push: VAPID keys configured');
 }
 
-
-// OWM Key check at startup
-const _OWM_VAL = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
-if (_OWM_VAL) {
-  console.log('\u2713 Weather: OWM_KEY present (' + _OWM_VAL.length + ' chars)');
-} else {
-  console.warn('\u26a0 Weather: OWM_KEY MISSING - weather will not work on Render');
-}
-
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, 
@@ -124,31 +115,55 @@ async function requireAdmin(req, res, next) {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  const owmKey = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
-  res.json({
-    status:    'ok',
-    firebase:  firebaseReady ? 'connected' : 'not configured',
-    push:      pushReady     ? 'enabled'   : 'disabled',
-    weather:   owmKey        ? 'configured (' + owmKey.length + ' chars)' : 'MISSING - set OWM_KEY on Render',
-    timestamp: new Date().toISOString()
-  });
+  res.json({ status: 'ok', firebase: firebaseReady ? 'connected' : 'not configured', push: pushReady ? 'enabled' : 'disabled' });
 });
 
 app.get('/api/weather', async (req, res) => {
   const OWM_KEY = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
-  if (!OWM_KEY) return res.status(500).json({ error: 'OWM_KEY not set in Render environment variables' });
-  const district = (req.query.district || 'Kwekwe').trim();
+  if (!OWM_KEY) return res.status(500).json({ error: 'OWM_KEY not set in environment variables' });
+  const district = (req.query.district || 'Harare').trim() || 'Harare';
   try {
-    const curRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(district)},ZW&units=metric&appid=${OWM_KEY}`);
-    if (!curRes.ok) return res.status(curRes.status).json({ error: 'Weather fetch failed' });
-    const cur = await curRes.json();
+    // Fetch current weather AND 3-hourly forecast in parallel
+    const [curRes, fcastRes] = await Promise.all([
+      fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(district)},ZW&units=metric&appid=${OWM_KEY}`),
+      fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(district)},ZW&units=metric&cnt=8&appid=${OWM_KEY}`)
+    ]);
+    if (!curRes.ok) {
+      const errBody = await curRes.json().catch(() => ({}));
+      return res.status(curRes.status).json({ error: errBody.message || 'Weather fetch failed' });
+    }
+    const cur   = await curRes.json();
+    const fcast = fcastRes.ok ? await fcastRes.json() : null;
+
+    // Derive true today min/max from 3-hourly slots
+    let todayMin = cur.main.temp;
+    let todayMax = cur.main.temp;
+    if (fcast && fcast.list) {
+      const todayStr = new Date().toISOString().split('T')[0];
+      fcast.list
+        .filter(s => s.dt_txt.startsWith(todayStr))
+        .forEach(s => {
+          if (s.main.temp_min < todayMin) todayMin = s.main.temp_min;
+          if (s.main.temp_max > todayMax) todayMax = s.main.temp_max;
+        });
+    }
+
     res.json({
-      city: cur.name,
-      temp: Math.round(cur.main.temp),
+      city:        cur.name,
+      temp:        Math.round(cur.main.temp),
+      feelsLike:   Math.round(cur.main.feels_like),
       description: cur.weather[0].description,
-      humidity: cur.main.humidity
+      icon:        cur.weather[0].icon,
+      humidity:    cur.main.humidity,
+      windSpeed:   Math.round(cur.wind.speed),
+      clouds:      cur.clouds.all,
+      todayMin:    Math.round(todayMin),
+      todayMax:    Math.round(todayMax)
     });
-  } catch (e) { res.status(500).json({ error: 'Weather service unavailable' }); }
+  } catch (e) {
+    console.error('Weather error:', e.message);
+    res.status(500).json({ error: 'Weather service unavailable: ' + e.message });
+  }
 });
 
 app.get('/api/push/vapid-key', (req, res) => {
@@ -202,6 +217,76 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.json({ success: false }); }
 });
+
+// ── Payment Initiation ───────────────────────────────────────────────────────
+app.post('/api/payment/initiate', verifyToken, async (req, res) => {
+  const { phone, method, amount, items } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
+
+  if (method === 'cash') {
+    return res.json({ success: true, reference: 'CASH-' + Date.now(), message: 'Cash order placed' });
+  }
+
+  const PAYNOW_ID  = process.env.PAYNOW_ID;
+  const PAYNOW_KEY = process.env.PAYNOW_KEY;
+
+  if (!PAYNOW_ID || !PAYNOW_KEY) {
+    console.warn('Paynow keys not set — order recorded as pending');
+    return res.json({ success: true, reference: 'PENDING-' + Date.now(), paynow: false, message: 'Order recorded. Add PAYNOW_ID and PAYNOW_KEY to Render env vars to enable live payments.' });
+  }
+
+  try {
+    const crypto    = require('crypto');
+    const reference = 'FCZ-' + Date.now();
+    const itemDesc  = (items || []).map(i => i.name + ' x' + i.qty).join(', ').slice(0, 100);
+    const baseUrl   = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com';
+
+    const fields = {
+      id: PAYNOW_ID, reference,
+      amount: amount.toFixed(2),
+      additionalinfo: itemDesc,
+      returnurl: baseUrl + '/marketplace.html',
+      resulturl: baseUrl + '/api/payment/callback',
+      status: 'Message',
+      authemail: req.user.email || ''
+    };
+    if (['ecocash','onemoney','innbucks'].includes(method)) {
+      fields.phone  = phone;
+      fields.method = method;
+    }
+
+    const vals  = Object.values(fields).join('') + PAYNOW_KEY;
+    fields.hash = crypto.createHash('md5').update(vals).digest('hex').toUpperCase();
+
+    const pnRes = await fetch('https://www.paynow.co.zw/interface/initiatetransaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(fields).toString()
+    });
+    const parsed = Object.fromEntries((await pnRes.text()).split('&').map(p => p.split('=').map(decodeURIComponent)));
+
+    if ((parsed.status || '').toLowerCase() === 'ok') {
+      res.json({ success: true, reference, pollUrl: parsed.pollurl });
+    } else {
+      res.json({ success: false, error: parsed.error || 'Payment initiation failed' });
+    }
+  } catch (e) {
+    console.error('Payment error:', e.message);
+    res.status(500).json({ error: 'Payment service error' });
+  }
+});
+
+app.post('/api/payment/callback', async (req, res) => {
+  const { reference, status, paynowreference } = req.body;
+  if (db && reference) {
+    try {
+      const snap = await db.collection('orders').where('reference','==',reference).limit(1).get();
+      if (!snap.empty) await snap.docs[0].ref.update({ status: (status||'').toLowerCase() === 'paid' ? 'paid' : 'payment_failed', paynowReference: paynowreference || null });
+    } catch(e) { console.error('Callback error:', e.message); }
+  }
+  res.send('OK');
+});
+
 
 // Final listener for Render
 app.listen(PORT, '0.0.0.0', () => {
