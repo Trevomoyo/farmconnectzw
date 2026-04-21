@@ -54,6 +54,15 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   console.log('✓ Web Push: VAPID keys configured');
 }
 
+
+// OWM Key check at startup
+const _OWM_VAL = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
+if (_OWM_VAL) {
+  console.log('\u2713 Weather: OWM_KEY present (' + _OWM_VAL.length + ' chars)');
+} else {
+  console.warn('\u26a0 Weather: OWM_KEY MISSING - weather will not work on Render');
+}
+
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({
   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, 
@@ -115,12 +124,19 @@ async function requireAdmin(req, res, next) {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', firebase: firebaseReady ? 'connected' : 'not configured', push: pushReady ? 'enabled' : 'disabled' });
+  const owmKey = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
+  res.json({
+    status:    'ok',
+    firebase:  firebaseReady ? 'connected' : 'not configured',
+    push:      pushReady     ? 'enabled'   : 'disabled',
+    weather:   owmKey        ? 'configured (' + owmKey.length + ' chars)' : 'MISSING - set OWM_KEY on Render',
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.get('/api/weather', async (req, res) => {
-  const OWM_KEY = process.env.OWM_KEY;
-  if (!OWM_KEY) return res.status(500).json({ error: 'OWM_KEY not set' });
+  const OWM_KEY = (process.env.OWM_KEY || '').trim().replace(/^["']|["']$/g, '');
+  if (!OWM_KEY) return res.status(500).json({ error: 'OWM_KEY not set in Render environment variables' });
   const district = (req.query.district || 'Kwekwe').trim();
   try {
     const curRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(district)},ZW&units=metric&appid=${OWM_KEY}`);
@@ -190,17 +206,4 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
 // Final listener for Render
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-
-  // Keep-alive ping — prevents Render free tier from spinning down
-  // Pings own /api/health every 14 minutes (Render sleeps after 15min)
-  if (process.env.NODE_ENV !== 'development' && process.env.RENDER_EXTERNAL_URL) {
-    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL + '/api/health';
-    setInterval(async () => {
-      try {
-        const fetch = (await import('node-fetch')).default;
-        await fetch(keepAliveUrl);
-        console.log('Keep-alive ping sent');
-      } catch (e) { /* non-critical */ }
-    }, 14 * 60 * 1000); // every 14 minutes
-  }
 });
