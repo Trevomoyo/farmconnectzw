@@ -207,29 +207,77 @@
     }).join('');
   });
 
-  // ── Fixed Weather Logic ─────────────────────────────────────────────────────
+  // ── Weather Logic ────────────────────────────────────────────────────────────
+  // Handles Render cold starts: shows "waking up" message, retries once after 35s
   async function loadWeather(district) {
     const weatherBody = document.getElementById('weather-body');
+    const locationEl  = document.getElementById('weather-location');
+
+    async function fetchWeather() {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 40000); // 40s timeout for cold start
+      try {
+        const res = await fetch(
+          `${API_URL}/api/weather?district=${encodeURIComponent(district || 'Harare')}`,
+          { signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        if (!res.ok) throw new Error('status ' + res.status);
+        return await res.json();
+      } catch (e) {
+        clearTimeout(timeout);
+        throw e;
+      }
+    }
+
+    weatherBody.innerHTML = '<p class="text-gray text-sm">Loading weather…</p>';
+
     try {
-      const res = await fetch(`${API_URL}/api/weather?district=${encodeURIComponent(district || 'Kwekwe')}`);
-      if (!res.ok) throw new Error('Weather fetch failed');
-      const w = await res.json();
-      
-      weatherBody.innerHTML = `
-        <div style="display:flex;align-items:center;gap:8px;">
-          <img src="https://openweathermap.org/img/wn/${w.icon || '01d'}@2x.png" style="width:56px;height:56px;">
-          <div>
-            <div style="font-size:2rem;font-weight:700;color:var(--green-dark);">${w.temp}°C</div>
-            <div style="font-size:.9rem;text-transform:capitalize;">${w.description}</div>
-          </div>
-        </div>
-        <div>
-          <p class="text-sm">💧 Humidity: <strong>${w.humidity}%</strong></p>
-          <p class="text-sm">🏙️ City: <strong>${w.city}</strong></p>
-        </div>`;
+      const w = await fetchWeather();
+      if (locationEl) locationEl.textContent = (w.city || district || 'Zimbabwe');
+      weatherBody.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<img src="https://openweathermap.org/img/wn/' + (w.icon || '01d') + '@2x.png" style="width:56px;height:56px;">' +
+          '<div>' +
+            '<div style="font-size:2rem;font-weight:700;color:var(--green-dark);">' + w.temp + '°C</div>' +
+            '<div style="font-size:.9rem;text-transform:capitalize;">' + w.description + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">💧 Humidity: <strong>' + w.humidity + '%</strong></p>' +
+          '<p class="text-sm">🌡️ Feels like: <strong>' + (w.feelsLike || w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">💨 Wind: <strong>' + (w.windSpeed || '—') + ' m/s</strong></p>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">🌅 Low: <strong>' + (w.todayMin || w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">🌇 High: <strong>' + (w.todayMax || w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">☁️ Clouds: <strong>' + (w.clouds || '—') + '%</strong></p>' +
+        '</div>';
     } catch (e) {
-      console.error('Weather Error:', e);
-      weatherBody.innerHTML = '<p class="text-gray text-sm">Weather unavailable. (Check Render logs)</p>';
+      if (e.name === 'AbortError') {
+        // Render cold start — server is waking up, retry after 10 more seconds
+        weatherBody.innerHTML = '<p class="text-gray text-sm">⏳ Server waking up — retrying…</p>';
+        setTimeout(async () => {
+          try {
+            const w = await fetchWeather();
+            if (locationEl) locationEl.textContent = (w.city || district || 'Zimbabwe');
+            weatherBody.innerHTML =
+              '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<img src="https://openweathermap.org/img/wn/' + (w.icon || '01d') + '@2x.png" style="width:56px;height:56px;">' +
+                '<div>' +
+                  '<div style="font-size:2rem;font-weight:700;color:var(--green-dark);">' + w.temp + '°C</div>' +
+                  '<div style="font-size:.9rem;text-transform:capitalize;">' + w.description + '</div>' +
+                '</div>' +
+              '</div>' +
+              '<div><p class="text-sm">💧 Humidity: <strong>' + w.humidity + '%</strong></p></div>';
+          } catch (e2) {
+            weatherBody.innerHTML = '<p class="text-gray text-sm">Weather unavailable — server may be offline.</p>';
+          }
+        }, 10000);
+      } else {
+        console.error('Weather error:', e.message);
+        weatherBody.innerHTML = '<p class="text-gray text-sm">Weather unavailable — check your Render server is running and OWM_KEY is set in environment variables.</p>';
+      }
     }
   }
   loadWeather(profile?.district);
