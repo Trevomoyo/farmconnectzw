@@ -190,4 +190,17 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
 // Final listener for Render
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Keep-alive ping — prevents Render free tier from spinning down
+  // Pings own /api/health every 14 minutes (Render sleeps after 15min)
+  if (process.env.NODE_ENV !== 'development' && process.env.RENDER_EXTERNAL_URL) {
+    const keepAliveUrl = process.env.RENDER_EXTERNAL_URL + '/api/health';
+    setInterval(async () => {
+      try {
+        const fetch = (await import('node-fetch')).default;
+        await fetch(keepAliveUrl);
+        console.log('Keep-alive ping sent');
+      } catch (e) { /* non-critical */ }
+    }, 14 * 60 * 1000); // every 14 minutes
+  }
 });
