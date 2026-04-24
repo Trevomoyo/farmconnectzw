@@ -1,7 +1,4 @@
-/**
- * FarmConnectZW — Express Backend Server
- * Fix: Alphabetical Paynow Hashing
- */
+
 
 require('dotenv').config();
 
