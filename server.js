@@ -172,36 +172,59 @@ app.get('/api/weather', async (req, res) => {
 });
 
 // ── Payment Routes (Fixed Hashing) ─────────────────────────────────────────────
+// ── Payment Initiation ───────────────────────────────────────────────────────
 app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   const { phone, method, amount, items } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
+
+  if (method === 'cash') {
+    return res.json({ success: true, reference: 'CASH-' + Date.now(), message: 'Cash order placed' });
+  }
+
   const PAYNOW_ID  = process.env.PAYNOW_ID;
   const PAYNOW_KEY = process.env.PAYNOW_KEY;
 
-  if (!PAYNOW_ID || !PAYNOW_KEY) return res.json({ success: true, reference: 'PENDING-' + Date.now() });
+  if (!PAYNOW_ID || !PAYNOW_KEY) {
+    console.warn('Paynow keys not set — order recorded as pending');
+    return res.json({ success: true, reference: 'PENDING-' + Date.now(), paynow: false, message: 'Order recorded. Add PAYNOW_ID and PAYNOW_KEY to Render env vars to enable live payments.' });
+  }
 
   try {
+    const crypto    = require('crypto');
     const reference = 'FCZ-' + Date.now();
     const itemDesc  = (items || []).map(i => i.name + ' x' + i.qty).join(', ').slice(0, 100);
     const baseUrl   = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com';
 
     const fields = {
-      id: PAYNOW_ID,
-      reference,
-      amount: parseFloat(amount).toFixed(2),
       additionalinfo: itemDesc || "FarmConnect Order",
-      returnurl: baseUrl + '/marketplace.html',
+      amount: parseFloat(amount).toFixed(2),
+      authemail: req.user.email || '',
+      id: PAYNOW_ID,
+      reference: reference,
       resulturl: baseUrl + '/api/payment/callback',
-      status: 'Message',
-      authemail: req.user.email || ''
+      returnurl: baseUrl + '/marketplace.html',
+      status: 'Message'
     };
 
     if (['ecocash','onemoney','innbucks'].includes(method)) {
-      fields.phone = phone;
       fields.method = method;
+      fields.phone  = phone;
     }
 
-    // Apply alphabetical sorting for hash
-    fields.hash = generatePaynowHash(fields, PAYNOW_KEY);
+    // 1. Sort keys alphabetically (Mandatory for Paynow)
+    const sortedKeys = Object.keys(fields).sort();
+
+    // 2. Concatenate values
+    let hashString = '';
+    for (const key of sortedKeys) {
+      hashString += fields[key];
+    }
+
+    // 3. Append Integration Key
+    hashString += PAYNOW_KEY;
+
+    // 4. Hash using SHA-512 (Mandatory for Paynow)
+    fields.hash = crypto.createHash('sha512').update(hashString).digest('hex').toUpperCase();
 
     const pnRes = await fetch('https://www.paynow.co.zw/interface/initiatetransaction', {
       method: 'POST',
@@ -209,34 +232,22 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
       body: new URLSearchParams(fields).toString()
     });
 
-    const text = await pnRes.text();
-    const parsed = Object.fromEntries(new URLSearchParams(text));
+    const parsedText = await pnRes.text();
+    // Paynow sends back a URL-encoded string, Parse it:
+    const parsed = Object.fromEntries(new URLSearchParams(parsedText));
 
-    if (parsed.status.toLowerCase() === 'ok') {
+    if ((parsed.status || '').toLowerCase() === 'ok') {
       res.json({ success: true, reference, pollUrl: parsed.pollurl });
     } else {
-      res.json({ success: false, error: parsed.error });
+      res.json({ success: false, error: parsed.error || 'Payment initiation failed' });
     }
-  } catch (e) { res.status(500).json({ error: 'Payment failed' }); }
-});
-
-app.post('/api/payment/callback', async (req, res) => {
-  const data = req.body;
-  const PAYNOW_KEY = process.env.PAYNOW_KEY;
-
-  // Validate callback hash
-  if (data.hash === generatePaynowHash(data, PAYNOW_KEY)) {
-    if (db && data.reference) {
-      const snap = await db.collection('orders').where('reference','==',data.reference).limit(1).get();
-      if (!snap.empty) {
-        await snap.docs[0].ref.update({ 
-          status: data.status.toLowerCase() === 'paid' ? 'paid' : 'payment_failed', 
-          paynowReference: data.paynowreference || null 
-        });
-      }
-    }
+  } catch (e) {
+    console.error('Payment error:', e.message);
+    res.status(500).json({ error: 'Payment service error' });
+    
   }
   res.send('OK');
 });
 
 app.listen(PORT, '0.0.0.0', () => console.log(`✓ Server running on port ${PORT}`));
+});nsole.log(`✓ Server running on port ${PORT}`));
