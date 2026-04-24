@@ -243,6 +243,7 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
     res.status(500).json({ error: 'Payment service error' });
     
   }
+  });
  
 app.listen(PORT, '0.0.0.0', () => console.log(`✓ Server running on port ${PORT}`));
 
