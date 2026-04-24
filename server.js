@@ -249,5 +249,5 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   res.send('OK');
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`✓ Server running on port ${PORT}`));
+
 });nsole.log(`✓ Server running on port ${PORT}`));
