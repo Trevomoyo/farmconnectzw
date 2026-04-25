@@ -45,7 +45,7 @@ const db = firebaseReady ? admin.firestore() : null;
 // Supabase Storage Setup
 let supabaseReady = false;
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY; 
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
 let supabase = null;
 
 if (supabaseUrl && supabaseKey) {
@@ -64,7 +64,7 @@ const upload = multer({
 let pushReady = false;
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
-    process.env.VAPID_EMAIL || 'mailto:admin@farmconnectzw.zw',
+    process.env.VAPID_EMAIL || 'mailto:admin@farmconnectzw.co.zw',
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
@@ -212,7 +212,7 @@ app.post('/api/upload', verifyToken, upload.single('media'), async (req, res) =>
     const filePath = `${folder}/${filename}`;
 
     const { data, error } = await supabase.storage
-      .from('media-bucket') // make sure this bucket exists in your Supabase project
+      .from('media-bucket')
       .upload(filePath, req.file.buffer, {
         contentType: req.file.mimetype,
         upsert: false
