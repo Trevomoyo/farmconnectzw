@@ -292,8 +292,7 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
     res.json({ success: false }); 
   }
 });
-
-// Payments
+//Payments
 app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   const { phone, method, amount, items } = req.body;
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
@@ -302,85 +301,114 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
     return res.json({ success: true, reference: 'CASH-' + Date.now(), message: 'Cash order placed' });
   }
 
-  const PAYNOW_ID = process.env.PAYNOW_ID;
+  const PAYNOW_ID  = process.env.PAYNOW_ID;
   const PAYNOW_KEY = process.env.PAYNOW_KEY;
 
   if (!PAYNOW_ID || !PAYNOW_KEY) {
-    return res.json({ 
-      success: true, 
-      reference: 'PENDING-' + Date.now(), 
-      paynow: false, 
-      message: 'Order recorded. Add PAYNOW keys to enable live payments.' 
-    });
+    console.warn('Paynow keys not set — order recorded as pending');
+    return res.json({ success: true, reference: 'PENDING-' + Date.now(), paynow: false, message: 'Order recorded. Add PAYNOW_ID and PAYNOW_KEY to Render env vars to enable live payments.' });
   }
 
   try {
-    const reference = 'FCZ-' + Date.now();
-    const itemDesc = (items || []).map(i => `${i.name} x${i.qty}`).join(', ').slice(0, 100);
-    const baseUrl = (process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com').replace(/\/+$/, '');
-    const isMobile = ['ecocash', 'onemoney', 'innbucks'].includes(method);
+    const crypto     = require('crypto');
+    const reference  = 'FCZ-' + Date.now();
+    const itemDesc   = (items || []).map(i => i.name + ' x' + i.qty).join(', ').slice(0, 100);
+    const baseUrl    = (process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com').replace(/\/+$/, '');
+    const isMobile   = ['ecocash','onemoney','innbucks'].includes(method);
     const amount_str = Number(amount).toFixed(2);
-    
-    // Strict Paynow Data Object construction 
-    // The keys must be appended to the string in the exact order they are added here
-    const postDataObj = {
-      id: String(PAYNOW_ID),
-      reference: reference,
-      amount: amount_str,
-      additionalinfo: itemDesc,
-      returnurl: baseUrl + '/marketplace.html',
-      resulturl: baseUrl + '/api/payment/callback',
-      status: 'Message',
-      authemail: req.user.email || ''
-    };
+    const returnurl  = baseUrl + '/marketplace.html';
+    const resulturl  = baseUrl + '/api/payment/callback';
+    const authemail  = req.user.email || '';
 
-    if (isMobile) {
-      postDataObj.phone = ('263' + phone.replace(/^\+?26[34]|^0/, '').replace(/\D/g, '')).slice(0, 12);
-      postDataObj.method = method;
+    // ── Paynow Hash ────────────────────────────────────────────────────────
+    // Source: https://forums.paynow.co.zw/t/invalid-hash-when-initiating-a-remotetransaction/1295
+    // Harvey's confirmed working example (post #14) and Lucia's field order (post #11).
+    //
+    // Algorithm: SHA512( concatenated_values + integrationKey ), uppercase hex.
+    // NOT MD5. NOT URL-encoded values. Raw strings only.
+    //
+    // Web field order:
+    //   id, reference, amount, additionalinfo, returnurl, resulturl, status, authemail
+    //
+    // Mobile field order (Harvey post #14 confirmed working):
+    //   id, reference, amount, additionalinfo, returnurl, resulturl, status, method, phone, authemail
+    //
+    // Hash appended LAST to the POST body, not included in hash input.
+
+    function paynowHash(values, integrationKey) {
+      // values = array of raw string values in exact field order
+      const str = values.join('') + integrationKey;
+      return crypto.createHash('sha512').update(str, 'utf8').digest('hex').toUpperCase();
     }
 
-    // Hash generation: raw values concatenated in strict order + integration key, then hashed
-    const hashInput = Object.values(postDataObj).join('') + PAYNOW_KEY;
-    postDataObj.hash = crypto.createHash('md5').update(hashInput, 'utf8').digest('hex').toUpperCase();
+    let paynowUrl, fields, hashValues;
 
-    const paynowUrl = isMobile 
-      ? 'https://www.paynow.co.zw/interface/remotetransaction' 
-      : 'https://www.paynow.co.zw/interface/initiatetransaction';
+    if (!isMobile) {
+      // Web / redirect transaction
+      fields = {
+        id:             String(PAYNOW_ID),
+        reference,
+        amount:         amount_str,
+        additionalinfo: itemDesc,
+        returnurl,
+        resulturl,
+        status:         'Message',
+        authemail
+      };
+      hashValues     = [fields.id, fields.reference, fields.amount, fields.additionalinfo, fields.returnurl, fields.resulturl, fields.status, fields.authemail];
+      fields.hash    = paynowHash(hashValues, PAYNOW_KEY);
+      paynowUrl      = 'https://www.paynow.co.zw/interface/initiatetransaction';
+
+    } else {
+      // Mobile money — normalise phone to 263XXXXXXXXX
+      const normPhone = ('263' + phone.replace(/^\+?2630?|^0/, '').replace(/\D/g, '')).slice(0, 12);
+      // Confirmed field order from forums post #14:
+      // id, reference, amount, additionalinfo, returnurl, resulturl, status, method, phone, authemail
+      fields = {
+        id:             String(PAYNOW_ID),
+        reference,
+        amount:         amount_str,
+        additionalinfo: itemDesc,
+        returnurl,
+        resulturl,
+        status:         'Message',
+        method,
+        phone:          normPhone,
+        authemail
+      };
+      hashValues     = [fields.id, fields.reference, fields.amount, fields.additionalinfo, fields.returnurl, fields.resulturl, fields.status, fields.method, fields.phone, fields.authemail];
+      fields.hash    = paynowHash(hashValues, PAYNOW_KEY);
+      paynowUrl      = 'https://www.paynow.co.zw/interface/remotetransaction';
+    }
+
+    console.log('Paynow posting to:', paynowUrl);
+    console.log('Paynow fields (no key):', { ...fields, hash: fields.hash });
 
     const pnRes = await fetch(paynowUrl, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(postDataObj).toString()
+      body:    new URLSearchParams(fields).toString()
     });
-    
     const rawText = await pnRes.text();
-    
-    // Parse Paynow response
+    console.log('Paynow response:', rawText);
+
+    // Parse URL-encoded response
     const parsed = {};
     rawText.split('&').forEach(pair => {
-      const [key, val] = pair.split('=');
-      if (key && val !== undefined) {
-        parsed[decodeURIComponent(key)] = decodeURIComponent(val);
-      }
+      const eq = pair.indexOf('=');
+      if (eq > -1) parsed[decodeURIComponent(pair.slice(0, eq))] = decodeURIComponent(pair.slice(eq + 1));
     });
 
     const pnStatus = (parsed.status || '').toLowerCase();
-    
     if (pnStatus === 'ok' || pnStatus === 'sent') {
-      res.json({ 
-        success: true, 
-        reference, 
-        pollUrl: parsed.pollurl || null, 
-        redirectUrl: parsed.browserurl || null 
-      });
+      res.json({ success: true, reference, pollUrl: parsed.pollurl || null, redirectUrl: parsed.browserurl || null });
     } else {
-      res.json({ 
-        success: false, 
-        error: parsed.error || `Paynow status: ${parsed.status || 'unknown'}` 
-      });
+      console.error('Paynow rejected:', parsed);
+      res.json({ success: false, error: parsed.error || ('Paynow error: ' + (parsed.status || 'check Render logs')) });
     }
   } catch (e) {
-    res.status(500).json({ error: 'Payment error: ' + e.message });
+    console.error('Payment error:', e.message);
+    res.status(500).json({ error: 'Payment service error: ' + e.message });
   }
 });
 
@@ -388,20 +416,13 @@ app.post('/api/payment/callback', async (req, res) => {
   const { reference, status, paynowreference } = req.body;
   if (db && reference) {
     try {
-      const snap = await db.collection('orders').where('reference', '==', reference).limit(1).get();
-      if (!snap.empty) {
-        const isPaid = (status || '').toLowerCase() === 'paid';
-        await snap.docs[0].ref.update({ 
-          status: isPaid ? 'paid' : 'payment_failed', 
-          paynowReference: paynowreference || null 
-        });
-      }
-    } catch(e) { 
-      console.error('Callback error:', e.message); 
-    }
+      const snap = await db.collection('orders').where('reference','==',reference).limit(1).get();
+      if (!snap.empty) await snap.docs[0].ref.update({ status: (status||'').toLowerCase() === 'paid' ? 'paid' : 'payment_failed', paynowReference: paynowreference || null });
+    } catch(e) { console.error('Callback error:', e.message); }
   }
   res.send('OK');
 });
+
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
