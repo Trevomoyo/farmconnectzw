@@ -153,15 +153,24 @@ const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
 
-  socket.on('join', ({ userId }) => {
-    socket.userId = userId;
-    onlineUsers.set(userId, socket.id);
-    socket.broadcast.emit('user_online', userId);
-  });
+   socket.on('join', ({ userId }) => {
+     socket.userId = userId;
+     onlineUsers.set(userId, socket.id);
 
-  socket.on('join_chat', ({ chatId }) => {
-    socket.join(chatId);
-  });
+     // Send current online list to the newly joined user
+     socket.emit('initial_online', Array.from(onlineUsers.keys()));
+
+     // Notify others that this user is online
+     socket.broadcast.emit('user_online', userId);
+   });
+
+   socket.on('join_chat', ({ chatId }) => {
+     socket.join(chatId);
+   });
+
+   socket.on('leave_chat', ({ chatId }) => {
+     socket.leave(chatId);
+   });
 
    socket.on('send_message', async (data) => {
      // Persist to Firestore for history
@@ -191,19 +200,22 @@ io.on('connection', (socket) => {
 
      // Send push notification to recipient if they are offline
      if (pushReady && db && data.recipientId) {
-       try {
-         const userSnap = await db.collection('users').doc(data.recipientId).get();
-         if (userSnap.exists && userSnap.data().pushSubscription) {
-           const preview = data.text ? data.text.slice(0, 100) : (data.mediaType ? '📎 Media' : 'New message');
-           const payload = JSON.stringify({
-             title: `💬 Message from ${data.senderName || 'User'}`,
-             body: preview,
-             url: '/messages.html'
-           });
-           await webpush.sendNotification(userSnap.data().pushSubscription, payload);
+       // Skip push if recipient is currently online
+       if (!onlineUsers.has(data.recipientId)) {
+         try {
+           const userSnap = await db.collection('users').doc(data.recipientId).get();
+           if (userSnap.exists && userSnap.data().pushSubscription) {
+             const preview = data.text ? data.text.slice(0, 100) : (data.mediaType ? '📎 Media' : 'New message');
+             const payload = JSON.stringify({
+               title: `💬 Message from ${data.senderName || 'User'}`,
+               body: preview,
+               url: '/messages.html'
+             });
+             await webpush.sendNotification(userSnap.data().pushSubscription, payload);
+           }
+         } catch (e) {
+           console.error('Push notification error:', e.message);
          }
-       } catch (e) {
-         console.error('Push notification error:', e.message);
        }
      }
    });
