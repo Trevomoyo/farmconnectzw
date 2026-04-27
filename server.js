@@ -20,6 +20,9 @@ const multer = require('multer');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// Static files
+app.use(express.static(__dirname));
+
 // Firebase Admin Setup
 let firebaseReady = false;
 const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
@@ -75,31 +78,31 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 }
 
 // Security & Middleware
-app.use(helmet({
-  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, 
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "https://www.gstatic.com", "https://unpkg.com", "https://fonts.googleapis.com", "https://apis.google.com"],
-      styleSrc:   ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
-      fontSrc:    ["'self'", "https://fonts.gstatic.com"],
-      imgSrc:     ["'self'", "data:", "https:", "blob:", supabaseUrl ? `${supabaseUrl}/*` : ""],
-      connectSrc: ["'self'", "https://firestore.googleapis.com", "https://identitytoolkit.googleapis.com",
-                   "https://securetoken.googleapis.com", "https://api.openweathermap.org",
-                   "https://*.tile.openstreetmap.org", "wss://firestore.googleapis.com",
-                   "https://www.gstatic.com", "https://unpkg.com",
-                   "https://accounts.google.com", "https://oauth2.googleapis.com",
-                   supabaseUrl || "",
-                   "ws:", 
-                   "wss:" 
-                  ],
-      frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app",
-                   "https://accounts.google.com"],
-      workerSrc:  ["'self'", "blob:"],
-      mediaSrc:   ["'self'", supabaseUrl ? `${supabaseUrl}/*` : ""]
-    }
-  }
-}));
+ app.use(helmet({
+   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, 
+   contentSecurityPolicy: {
+     directives: {
+       defaultSrc: ["'self'"],
+       scriptSrc:  ["'self'", "'unsafe-inline'", "https://www.gstatic.com", "https://unpkg.com", "https://fonts.googleapis.com", "https://apis.google.com", "https://cdn.socket.io"],
+       styleSrc:   ["'self'", "'unsafe-inline'", "https://unpkg.com", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+       fontSrc:    ["'self'", "https://fonts.gstatic.com"],
+       imgSrc:     ["'self'", "data:", "https:", "blob:", supabaseUrl ? `${supabaseUrl}/*` : ""],
+       connectSrc: ["'self'", "https://firestore.googleapis.com", "https://identitytoolkit.googleapis.com",
+                    "https://securetoken.googleapis.com", "https://api.openweathermap.org",
+                    "https://*.tile.openstreetmap.org", "wss://firestore.googleapis.com",
+                    "https://www.gstatic.com", "https://unpkg.com",
+                    "https://accounts.google.com", "https://oauth2.googleapis.com",
+                    supabaseUrl || "",
+                    "ws:", 
+                    "wss:" 
+                   ],
+       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app",
+                    "https://accounts.google.com"],
+       workerSrc:  ["'self'", "blob:"],
+       mediaSrc:   ["'self'", supabaseUrl ? `${supabaseUrl}/*` : ""]
+     }
+   }
+ }));
 
 app.use(cors({
   origin: [
@@ -137,8 +140,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 // Socket.io
-const server = http.createServer(app);
-
+const server = http.createServer(); // Create server without app initially
 const io = new Server(server, {
   cors: {
     origin: [
@@ -683,9 +685,11 @@ app.post('/api/payment/callback', async (req, res) => {
       if (!snap.empty) await snap.docs[0].ref.update({ status: (status||'').toLowerCase() === 'paid' ? 'paid' : 'payment_failed', paynowReference: paynowreference || null });
     } catch(e) { console.error('Callback error:', e.message); }
   }
-  res.send('OK');
-});
+   res.send('OK');
+ });
 
+// Mount Express app after socket.io handler (so socket.io gets first chance on /socket.io/*)
+server.on('request', app);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running with realtime on port ${PORT}`);
