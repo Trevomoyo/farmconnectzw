@@ -163,9 +163,50 @@ io.on('connection', (socket) => {
     socket.join(chatId);
   });
 
-  socket.on('send_message', (data) => {
-    io.to(data.chatId).emit('receive_message', data);
-  });
+   socket.on('send_message', async (data) => {
+     // Persist to Firestore for history
+     if (db) {
+       try {
+         const messageData = {
+           senderId: data.senderId,
+           senderName: data.senderName || '',
+           recipientId: data.recipientId,
+           recipientName: data.recipientName || '',
+           participants: [data.senderId, data.recipientId],
+           text: data.text || '',
+           mediaType: data.mediaType || null,
+           mediaUrl: data.mediaUrl || null,
+           mediaName: data.mediaName || null,
+           seen: false,
+           createdAt: admin.firestore.FieldValue.serverTimestamp()
+         };
+         await db.collection('messages').add(messageData);
+       } catch (e) {
+         console.error('Failed to persist message:', e.message);
+       }
+     }
+
+     // Broadcast to other participants only (exclude sender)
+     socket.to(data.chatId).emit('receive_message', data);
+
+     // Send push notification to recipient if they are offline
+     if (pushReady && db && data.recipientId) {
+       try {
+         const userSnap = await db.collection('users').doc(data.recipientId).get();
+         if (userSnap.exists && userSnap.data().pushSubscription) {
+           const preview = data.text ? data.text.slice(0, 100) : (data.mediaType ? '📎 Media' : 'New message');
+           const payload = JSON.stringify({
+             title: `💬 Message from ${data.senderName || 'User'}`,
+             body: preview,
+             url: '/messages.html'
+           });
+           await webpush.sendNotification(userSnap.data().pushSubscription, payload);
+         }
+       } catch (e) {
+         console.error('Push notification error:', e.message);
+       }
+     }
+   });
 
   socket.on('typing', ({ chatId, userId }) => {
     socket.to(chatId).emit('typing', userId);
@@ -208,6 +249,148 @@ app.get('/api/health', (req, res) => {
     push: pushReady ? 'enabled' : 'disabled',
     storage: supabaseReady ? 'enabled' : 'disabled'
   });
+});
+
+// Supplier Commission API
+const COMMISSION_RATE = 0.05; // 5% commission
+
+app.get('/api/commissions/stats', verifyToken, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database unavailable' });
+  
+  try {
+    const ordersSnap = await db.collection('supplier_orders')
+      .where('supplierId', '==', req.user.uid)
+      .get();
+    
+    let totalRevenue = 0;
+    let totalCommission = 0;
+    let orderCount = 0;
+    
+    ordersSnap.forEach(doc => {
+      const order = doc.data();
+      const revenue = order.total || 0;
+      totalRevenue += revenue;
+      totalCommission += revenue * COMMISSION_RATE;
+      orderCount++;
+    });
+    
+    res.json({
+      totalRevenue: totalRevenue.toFixed(2),
+      totalCommission: totalCommission.toFixed(2),
+      commissionRate: COMMISSION_RATE * 100,
+      orderCount
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/commissions/track', verifyToken, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database unavailable' });
+  
+  const { orderId, productId, amount } = req.body;
+  
+  if (!orderId || !amount) {
+    return res.status(400).json({ error: 'Order ID and amount required' });
+  }
+  
+  try {
+    const commission = amount * COMMISSION_RATE;
+    
+    await db.collection('commission_tracking').add({
+      orderId,
+      productId,
+      supplierId: req.user.uid,
+      amount: commission,
+      rate: COMMISSION_RATE,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    
+    res.json({ 
+      success: true, 
+      commission: commission.toFixed(2),
+      rate: COMMISSION_RATE * 100
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Animal Census API for Officers
+app.get('/api/census/animal', verifyToken, async (req, res) => {
+  if (!db) return res.status(503).json({ error: 'Database unavailable' });
+  
+  try {
+    // Get officer's district
+    const userDoc = await db.collection('users').doc(req.user.uid).get();
+    if (!userDoc.exists) return res.status(404).json({ error: 'User not found' });
+    
+    const userData = userDoc.data();
+    if (userData.role !== 'extension_officer') {
+      return res.status(403).json({ error: 'Officer access only' });
+    }
+    
+    const district = userData.district;
+    if (!district) return res.status(400).json({ error: 'No district assigned' });
+    
+    // Get farmers in district
+    const farmersSnap = await db.collection('users')
+      .where('role', '==', 'farmer')
+      .where('district', '==', district)
+      .get();
+    
+    const farmerIds = farmersSnap.docs.map(d => d.id);
+    
+    if (farmerIds.length === 0) {
+      return res.json({ total: 0, byType: {}, byFarmer: [], district });
+    }
+    
+    // Get animals for these farmers
+    const animalsSnap = await db.collection('farm_animals')
+      .where('ownerId', 'in', farmerIds)
+      .get();
+    
+    const byType = { cattle: 0, goats: 0, sheep: 0, poultry: 0, pigs: 0, other: 0 };
+    const byFarmer = {};
+    
+    animalsSnap.docs.forEach(doc => {
+      const animal = doc.data();
+      const type = animal.type || 'other';
+      if (byType[type] !== undefined) {
+        byType[type]++;
+      } else {
+        byType.other++;
+      }
+      
+      if (!byFarmer[animal.ownerId]) {
+        byFarmer[animal.ownerId] = 0;
+      }
+      byFarmer[animal.ownerId]++;
+    });
+    
+    // Get farmer names
+    const farmerNames = {};
+    for (const fid of Object.keys(byFarmer)) {
+      const fDoc = await db.collection('users').doc(fid).get();
+      if (fDoc.exists) {
+        farmerNames[fid] = fDoc.data().name || 'Unknown';
+      }
+    }
+    
+    res.json({
+      total: animalsSnap.size,
+      byType,
+      byFarmer: Object.entries(byFarmer).map(([id, count]) => ({
+        farmerId: id,
+        farmerName: farmerNames[id] || 'Unknown',
+        animalCount: count
+      })).sort((a, b) => b.animalCount - a.animalCount),
+      district,
+      farmersWithAnimals: Object.keys(byFarmer).length
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/weather', async (req, res) => {
