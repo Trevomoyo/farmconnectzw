@@ -10,6 +10,8 @@ const webpush = require('web-push');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const crypto = require('crypto');
+const http = require('http'); 
+const { Server } = require('socket.io');
 
 // New dependencies for rich media handling
 const { createClient } = require('@supabase/supabase-js');
@@ -87,7 +89,10 @@ app.use(helmet({
                    "https://*.tile.openstreetmap.org", "wss://firestore.googleapis.com",
                    "https://www.gstatic.com", "https://unpkg.com",
                    "https://accounts.google.com", "https://oauth2.googleapis.com",
-                   supabaseUrl || ""],
+                   supabaseUrl || "",
+                   "ws:", 
+                   "wss:" 
+                  ],
       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app",
                    "https://accounts.google.com"],
       workerSrc:  ["'self'", "blob:"],
@@ -131,6 +136,69 @@ async function requireAdmin(req, res, next) {
     res.status(500).json({ error: e.message }); 
   }
 }
+// Socket.io
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: [
+      'https://farmconnectzw.web.app',
+      'https://farmconnectzw.firebaseapp.com'
+    ],
+    methods: ["GET", "POST"]
+  }
+});
+
+const onlineUsers = new Map();
+
+io.on('connection', (socket) => {
+
+  socket.on('join', ({ userId }) => {
+    socket.userId = userId;
+    onlineUsers.set(userId, socket.id);
+    socket.broadcast.emit('user_online', userId);
+  });
+
+  socket.on('join_chat', ({ chatId }) => {
+    socket.join(chatId);
+  });
+
+  socket.on('send_message', (data) => {
+    io.to(data.chatId).emit('receive_message', data);
+  });
+
+  socket.on('typing', ({ chatId, userId }) => {
+    socket.to(chatId).emit('typing', userId);
+  });
+
+  socket.on('stop_typing', ({ chatId, userId }) => {
+    socket.to(chatId).emit('stop_typing', userId);
+  });
+
+  socket.on('disconnect', async () => {
+    const userId = socket.userId;
+
+    if (userId) {
+      onlineUsers.delete(userId);
+
+      const lastSeen = Date.now();
+
+      socket.broadcast.emit('user_offline', {
+        userId,
+        lastSeen
+      });
+
+      if (db) {
+        try {
+          await db.collection('users').doc(userId).update({
+            lastSeen: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (e) {}
+      }
+    }
+  });
+
+});
 
 // Core API
 app.get('/api/health', (req, res) => {
@@ -424,6 +492,6 @@ app.post('/api/payment/callback', async (req, res) => {
 });
 
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running with realtime on port ${PORT}`);
 });
