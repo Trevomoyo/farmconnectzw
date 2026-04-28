@@ -104,11 +104,14 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
    }
  }));
 
+const ALLOWED_ORIGINS = [
+  'https://farmconnectzw.web.app',
+  'https://farmconnectzw.firebaseapp.com',
+  process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com'
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    'https://farmconnectzw.web.app',
-    'https://farmconnectzw.firebaseapp.com'
-  ],
+  origin: ALLOWED_ORIGINS,
   credentials: true
 }));
 
@@ -140,13 +143,10 @@ async function requireAdmin(req, res, next) {
   }
 }
 // Socket.io
-const server = http.createServer(); // Create server without app initially
+const server = http.createServer(app); // Pass app so HTTP routes work immediately
 const io = new Server(server, {
   cors: {
-    origin: [
-      'https://farmconnectzw.web.app',
-      'https://farmconnectzw.firebaseapp.com'
-    ],
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"]
   }
 });
@@ -359,15 +359,18 @@ app.get('/api/census/animal', verifyToken, async (req, res) => {
       return res.json({ total: 0, byType: {}, byFarmer: [], district });
     }
     
-    // Get animals for these farmers
-    const animalsSnap = await db.collection('farm_animals')
-      .where('ownerId', 'in', farmerIds)
-      .get();
-    
+    // Get animals for these farmers — chunk into 10 to respect Firestore 'in' limit
+    const chunks = [];
+    for (let i = 0; i < farmerIds.length; i += 10) chunks.push(farmerIds.slice(i, i + 10));
+    const chunkSnaps = await Promise.all(
+      chunks.map(chunk => db.collection('farm_animals').where('ownerId', 'in', chunk).get())
+    );
+    const allAnimalDocs = chunkSnaps.flatMap(s => s.docs);
+
     const byType = { cattle: 0, goats: 0, sheep: 0, poultry: 0, pigs: 0, other: 0 };
     const byFarmer = {};
     
-    animalsSnap.docs.forEach(doc => {
+    allAnimalDocs.forEach(doc => {
       const animal = doc.data();
       const type = animal.type || 'other';
       if (byType[type] !== undefined) {
@@ -392,7 +395,7 @@ app.get('/api/census/animal', verifyToken, async (req, res) => {
     }
     
     res.json({
-      total: animalsSnap.size,
+      total: allAnimalDocs.length,
       byType,
       byFarmer: Object.entries(byFarmer).map(([id, count]) => ({
         farmerId: id,
@@ -687,9 +690,6 @@ app.post('/api/payment/callback', async (req, res) => {
   }
    res.send('OK');
  });
-
-// Mount Express app after socket.io handler (so socket.io gets first chance on /socket.io/*)
-server.on('request', app);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running with realtime on port ${PORT}`);
