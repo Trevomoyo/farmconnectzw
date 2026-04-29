@@ -18,6 +18,7 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
 // Static files
