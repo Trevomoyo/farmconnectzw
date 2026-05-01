@@ -97,7 +97,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
                     "ws:", 
                     "wss:" 
                    ],
-       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app",
+       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app","https://farmconnectzw.co.zw",
                     "https://accounts.google.com"],
        workerSrc:  ["'self'", "blob:"],
        mediaSrc:   ["'self'", supabaseUrl ? `${supabaseUrl}/*` : ""]
@@ -107,6 +107,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 
 const ALLOWED_ORIGINS = [
   'https://farmconnectzw.web.app',
+  'https://farmconnectzw.co.zw',
   'https://farmconnectzw.firebaseapp.com',
   process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com'
 ].filter(Boolean);
