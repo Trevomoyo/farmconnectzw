@@ -18,7 +18,6 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 
 const app = express();
-app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
 // Static files
@@ -97,7 +96,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
                     "ws:", 
                     "wss:" 
                    ],
-       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app","https://farmconnectzw.co.zw",
+       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com", "https://farmconnectzw.web.app",
                     "https://accounts.google.com"],
        workerSrc:  ["'self'", "blob:"],
        mediaSrc:   ["'self'", supabaseUrl ? `${supabaseUrl}/*` : ""]
@@ -107,7 +106,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 
 const ALLOWED_ORIGINS = [
   'https://farmconnectzw.web.app',
-  'https://farmconnectzw.co.zw',
   'https://farmconnectzw.firebaseapp.com',
   process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com'
 ].filter(Boolean);
@@ -209,11 +207,12 @@ io.on('connection', (socket) => {
          try {
            const userSnap = await db.collection('users').doc(data.recipientId).get();
            if (userSnap.exists && userSnap.data().pushSubscription) {
+             const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
              const preview = data.text ? data.text.slice(0, 100) : (data.mediaType ? '📎 Media' : 'New message');
              const payload = JSON.stringify({
-               title: `💬 Message from ${data.senderName || 'User'}`,
+               title: `💬 ${data.senderName || 'New message'}`,
                body: preview,
-               url: '/messages.html'
+               url: origin + '/messages.html'
              });
              await webpush.sendNotification(userSnap.data().pushSubscription, payload);
            }
@@ -224,12 +223,12 @@ io.on('connection', (socket) => {
      }
    });
 
-  socket.on('typing', ({ chatId, userId }) => {
-    socket.to(chatId).emit('typing', userId);
+  socket.on('typing', ({ chatId, userId, userName }) => {
+    socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
 
   socket.on('stop_typing', ({ chatId, userId }) => {
-    socket.to(chatId).emit('stop_typing', userId);
+    socket.to(chatId).emit('stop_typing', { userId });
   });
 
   socket.on('disconnect', async () => {
@@ -465,7 +464,7 @@ app.get('/api/weather', async (req, res) => {
 });
 
 // Rich Media Uploads via Supabase
-app.post('/api/upload', verifyToken, upload.single('media'), async (req, res) => {
+app.post('/api/upload', verifyToken, upload.single('file'), async (req, res) => {
   if (!supabaseReady) return res.status(503).json({ error: 'Storage not configured' });
   if (!req.file) return res.status(400).json({ error: 'No file found in request' });
 
@@ -521,47 +520,123 @@ app.post('/api/push/subscribe', verifyToken, async (req, res) => {
 
 app.post('/api/push/broadcast', verifyToken, requireAdmin, async (req, res) => {
   if (!pushReady || !db) return res.status(503).json({ error: 'Push not configured' });
-  const { title, body, url } = req.body;
-  
+  const { title, body, url, district } = req.body;
+  if (!title) return res.status(400).json({ error: 'title required' });
+
   try {
-    const usersSnap = await db.collection('users').get();
-    const payload = JSON.stringify({ title, body: body || '', url: url || '/notifications.html' });
+    let query = db.collection('users');
+    // Optionally target a specific district
+    if (district) query = query.where('district', '==', district);
+    const usersSnap = await query.get();
+
+    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
+    const fullUrl = (url || '/notifications.html').startsWith('http') ? url : origin + (url || '/notifications.html');
+    const payload = JSON.stringify({ title, body: body || '', url: fullUrl });
+
     let sent = 0;
-    
+    const staleIds = [];
+
     await Promise.allSettled(
       usersSnap.docs
         .filter(d => d.data().pushSubscription)
         .map(async d => {
-          await webpush.sendNotification(d.data().pushSubscription, payload);
-          sent++;
+          try {
+            await webpush.sendNotification(d.data().pushSubscription, payload);
+            sent++;
+          } catch (e) {
+            // 410 Gone / 404 = subscription expired — clean it up
+            if (e.statusCode === 410 || e.statusCode === 404) {
+              staleIds.push(d.id);
+            }
+          }
         })
     );
-    res.json({ success: true, sent });
-  } catch (e) { 
-    res.status(500).json({ error: e.message }); 
+
+    // Remove stale subscriptions
+    if (staleIds.length) {
+      const batch = db.batch();
+      staleIds.forEach(id => batch.update(db.collection('users').doc(id), { pushSubscription: admin.firestore.FieldValue.delete() }));
+      await batch.commit();
+    }
+
+    res.json({ success: true, sent, staleRemoved: staleIds.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Push a single alert notification to a specific user
+app.post('/api/push/notify-user', verifyToken, async (req, res) => {
+  if (!pushReady || !db) return res.json({ success: false });
+  const { recipientId, title, body, url } = req.body;
+  if (!recipientId || !title) return res.status(400).json({ error: 'recipientId and title required' });
+
+  try {
+    const snap = await db.collection('users').doc(recipientId).get();
+    if (!snap.exists || !snap.data().pushSubscription) return res.json({ success: false, reason: 'no_subscription' });
+
+    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
+    const fullUrl = (url || '/notifications.html').startsWith('http') ? url : origin + (url || '/notifications.html');
+    const payload = JSON.stringify({ title, body: body || '', url: fullUrl });
+
+    try {
+      await webpush.sendNotification(snap.data().pushSubscription, payload);
+      res.json({ success: true });
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        await db.collection('users').doc(recipientId).update({ pushSubscription: admin.firestore.FieldValue.delete() });
+      }
+      res.json({ success: false, reason: e.message });
+    }
+  } catch (e) {
+    res.json({ success: false, reason: e.message });
   }
 });
 
 app.post('/api/notify/message', verifyToken, async (req, res) => {
   if (!pushReady || !db) return res.json({ success: false });
   const { recipientId, senderName, preview } = req.body;
-  
+  if (!recipientId) return res.json({ success: false });
+
   try {
     const snap = await db.collection('users').doc(recipientId).get();
     if (!snap.exists || !snap.data().pushSubscription) return res.json({ success: false });
-    
+
+    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
     const payload = JSON.stringify({
-      title: `💬 Message from ${senderName}`,
-      body: preview ? preview.slice(0, 100) : 'New message',
-      url: '/messages.html'
+      title: `💬 ${senderName || 'New message'}`,
+      body:  preview ? preview.slice(0, 120) : 'You have a new message',
+      url:   origin + '/messages.html'
     });
-    
-    await webpush.sendNotification(snap.data().pushSubscription, payload);
-    res.json({ success: true });
-  } catch (e) { 
-    res.json({ success: false }); 
+
+    try {
+      await webpush.sendNotification(snap.data().pushSubscription, payload);
+      res.json({ success: true });
+    } catch (e) {
+      if (e.statusCode === 410 || e.statusCode === 404) {
+        await db.collection('users').doc(recipientId).update({ pushSubscription: admin.firestore.FieldValue.delete() });
+      }
+      res.json({ success: false });
+    }
+  } catch (e) {
+    res.json({ success: false });
   }
 });
+// SW calls this when the browser auto-renews a push subscription
+app.post('/api/push/resubscribe', async (req, res) => {
+  if (!pushReady || !db) return res.json({ success: false });
+  // No auth token available from SW context — we trust the subscription endpoint itself
+  const { subscription, userId } = req.body;
+  if (!subscription || !userId) return res.json({ success: false });
+  try {
+    await db.collection('users').doc(userId).update({
+      pushSubscription: subscription,
+      pushUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    res.json({ success: true });
+  } catch (e) { res.json({ success: false }); }
+});
+
 //Payments
 app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   const { phone, method, amount, items } = req.body;
