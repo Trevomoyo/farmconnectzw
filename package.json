@@ -27,7 +27,7 @@
   }
 }
 
-+++ package.json (修改后)
+
 {
   "name": "farmconnectzw",
   "version": "1.0.0",
