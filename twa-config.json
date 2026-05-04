@@ -1,0 +1,30 @@
+{
+  "packageId": "com.farmconnectzw.app",
+  "name": "FarmConnectZW",
+  "launcherName": "FarmConnect",
+  "display": "standalone",
+  "themeColor": "#2D5A27",
+  "backgroundColor": "#2D5A27",
+  "startUrl": "/login.html",
+  "iconUrl": "https://farmconnectzw.onrender.com/images/icon-512.png",
+  "manifestUrl": "https://farmconnectzw.onrender.com/manifest.json",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "minSdkVersion": 19,
+  "enableNotifications": true,
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://farmconnectzw.onrender.com/manifest.json",
+  "features": {
+    "locationDelegation": {
+      "enabled": false
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaInternalTrack": {
+    "enabled": false
+  },
+  "retainedBundles": [],
+  "additionalTrustedOrigins": []
+}
