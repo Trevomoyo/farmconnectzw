@@ -225,11 +225,15 @@ async function _registerPushSubscription() {
     const { publicKey } = await keyRes.json();
     if (!publicKey) return false;
 
-    // Register SW (idempotent — safe to call multiple times)
-    const reg = await navigator.serviceWorker.register('/sw.js');
+    // Register BOTH service workers (idempotent — safe to call multiple times)
+    // sw.js for Web Push + offline caching
+    await navigator.serviceWorker.register('/sw.js');
+    // firebase-messaging-sw.js for Firebase Cloud Messaging (background notifications)
+    await navigator.serviceWorker.register('/firebase-messaging-sw.js');
     await navigator.serviceWorker.ready;
 
-    // Check if already subscribed
+    // Check if already subscribed (use the main sw.js registration)
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js');
     const existing = await reg.pushManager.getSubscription();
     const subscription = existing || await reg.pushManager.subscribe({
       userVisibleOnly: true,
