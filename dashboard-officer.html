@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Officer Dashboard — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header">
+    <h1 id="welcome">Welcome, Officer 👋</h1>
+    <p id="today-date" class="text-gray"></p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid mb-24">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-farmers">—</div>
+      <div class="stat-label">Farmers in District</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-requests">—</div>
+      <div class="stat-label">Pending Requests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-messages">—</div>
+      <div class="stat-label">Unread Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-label">Active Alerts</div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+    <div class="action-grid">
+      <a href="map.html"           class="btn btn-primary">🗺️ District Map</a>
+      <a href="messages.html"      class="btn btn-secondary">💬 Messages</a>
+      <a href="market-prices.html" class="btn btn-accent">📊 Market Prices</a>
+      <a href="knowledge-hub.html" class="btn btn-outline">📚 Resources</a>
+      <a href="notifications.html" class="btn btn-outline">🔔 Alerts</a>
+      <a href="profile.html"       class="btn btn-outline">👤 Profile</a>
+    </div>
+  </div>
+
+  <!-- Assistance Requests -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Assistance Requests</h3>
+      <span id="req-count" class="badge badge-warning">0 pending</span>
+    </div>
+    <div id="requests-list"><p class="text-gray text-sm">Loading…</p></div>
+  </div>
+
+  <!-- Animal Census -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">🐄 Animal Census</h3>
+      <button class="btn btn-sm btn-outline" onclick="refreshCensus()">🔄 Refresh</button>
+    </div>
+    <div id="census-stats" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px;">
+      <div class="stat-card">
+        <div class="stat-value" id="census-total">—</div>
+        <div class="stat-label">Total Animals</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="census-farmers">—</div>
+        <div class="stat-label">Farmers with Animals</div>
+      </div>
+    </div>
+    <div id="census-breakdown">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;text-align:center;" id="census-types">
+        <div><div style="font-size:1.8rem;">🐄</div><div class="text-sm" id="census-cattle">—</div><div class="text-xs text-gray">Cattle</div></div>
+        <div><div style="font-size:1.8rem;">🐐</div><div class="text-sm" id="census-goats">—</div><div class="text-xs text-gray">Goats</div></div>
+        <div><div style="font-size:1.8rem;">🐑</div><div class="text-sm" id="census-sheep">—</div><div class="text-xs text-gray">Sheep</div></div>
+        <div><div style="font-size:1.8rem;">🐔</div><div class="text-sm" id="census-poultry">—</div><div class="text-xs text-gray">Poultry</div></div>
+      </div>
+    </div>
+    <div style="margin-top:16px;">
+      <h4 class="card-title" style="margin-bottom:12px;">Farmers with Most Animals</h4>
+      <div id="census-farmers-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+  </div>
+</main>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+// Module-level cache so refreshCensus() can access the loaded profile
+let _officerProfile = null;
+
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showLoading, hideLoading, fmtDate, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading dashboard…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  _officerProfile = await loadProfile();
+
+  // Role guard
+  if (getRole() === 'farmer') { window.location.href = 'dashboard-farmer.html'; return; }
+  if (getRole() === 'administrator') { window.location.href = 'dashboard-admin.html'; return; }
+
+  hideLoading();
+  renderNavbar(getRole());
+
+  document.getElementById('welcome').textContent = `Welcome, ${_officerProfile?.name || 'Officer'} 👋`;
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-ZW', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  const user = getCurrentUser();
+  const district = _officerProfile?.district || '';
+
+  // Farmers in district
+  if (district) {
+    DB.collection('users').where('role','==','farmer').where('district','==',district).get()
+      .then(s => { document.getElementById('stat-farmers').textContent = s.size; });
+  }
+
+  // Pending assistance requests
+  DB.collection('assistanceRequests').where('assignedOfficerId','==',user.uid).where('status','==','pending').get()
+    .then(s => {
+      document.getElementById('stat-requests').textContent = s.size;
+      document.getElementById('req-count').textContent = `${s.size} pending`;
+      const list = document.getElementById('requests-list');
+      if (s.empty) { list.innerHTML = '<p class="text-gray text-sm">No pending requests.</p>'; return; }
+      list.innerHTML = s.docs.map(d => {
+        const r = d.data();
+        return `<div class="notif-item unread">
+          <div class="notif-icon">📋</div>
+          <div style="flex:1">
+            <strong>${r.subject || 'Assistance Request'}</strong>
+            <p class="text-sm text-gray">${r.message?.slice(0,100) || ''}…</p>
+            <p class="text-sm text-gray">${fmtDate(r.createdAt)}</p>
+          </div>
+          <button class="btn btn-sm btn-primary" onclick="resolveRequest('${d.id}')">Respond</button>
+        </div>`;
+      }).join('');
+    }).catch(() => {
+      document.getElementById('requests-list').innerHTML = '<p class="text-gray text-sm">Could not load requests.</p>';
+    });
+
+  // Unread messages
+  DB.collection('messages').where('recipientId','==',user.uid).where('read','==',false).get()
+    .then(s => { document.getElementById('stat-messages').textContent = s.size; });
+
+  // Alerts
+  DB.collection('alerts').where('active','==',true).get()
+    .then(s => { document.getElementById('stat-alerts').textContent = s.size; });
+
+  // Animal Census - load from farm_animals collection
+  loadAnimalCensus(district);
+})();
+
+async function loadAnimalCensus(district) {
+  try {
+    // Get all farmers in district
+    const farmersSnap = await DB.collection('users').where('role','==','farmer').where('district','==',district).get();
+    const farmerIds = farmersSnap.docs.map(d => d.id);
+    
+    if (farmerIds.length === 0) {
+      document.getElementById('census-total').textContent = '0';
+      document.getElementById('census-farmers').textContent = '0';
+      return;
+    }
+
+    // Chunk farmerIds into batches of 10 — Firestore 'in' query limit
+    const chunks = [];
+    for (let i = 0; i < farmerIds.length; i += 10) chunks.push(farmerIds.slice(i, i + 10));
+    const chunkSnaps = await Promise.all(
+      chunks.map(chunk => DB.collection('farm_animals').where('ownerId', 'in', chunk).get())
+    );
+    const allAnimalDocs = chunkSnaps.flatMap(s => s.docs);
+    
+    const counts = { cattle: 0, goats: 0, sheep: 0, poultry: 0, pigs: 0, other: 0 };
+    const farmerAnimalCounts = {};
+    
+    allAnimalDocs.forEach(d => {
+      const a = d.data();
+      const type = a.type || 'other';
+      if (counts[type] !== undefined) {
+        counts[type]++;
+      } else {
+        counts.other++;
+      }
+      // Count by farmer
+      if (!farmerAnimalCounts[a.ownerId]) farmerAnimalCounts[a.ownerId] = 0;
+      farmerAnimalCounts[a.ownerId]++;
+    });
+
+    const totalAnimals = Object.values(counts).reduce((a, b) => a + b, 0);
+    const farmersWithAnimals = Object.keys(farmerAnimalCounts).length;
+
+    document.getElementById('census-total').textContent = totalAnimals;
+    document.getElementById('census-farmers').textContent = farmersWithAnimals;
+    document.getElementById('census-cattle').textContent = counts.cattle;
+    document.getElementById('census-goats').textContent = counts.goats;
+    document.getElementById('census-sheep').textContent = counts.sheep;
+    document.getElementById('census-poultry').textContent = counts.poultry;
+
+    // Get top farmers
+    const topFarmers = Object.entries(farmerAnimalCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    if (topFarmers.length === 0) {
+      document.getElementById('census-farmers-list').innerHTML = '<p class="text-gray text-sm">No animal data available.</p>';
+      return;
+    }
+
+    // Get farmer names
+    const farmerNames = {};
+    for (const farmerId of topFarmers.map(f => f[0])) {
+      const farmerDoc = await DB.collection('users').doc(farmerId).get();
+      if (farmerDoc.exists) {
+        farmerNames[farmerId] = farmerDoc.data().name || 'Unknown';
+      }
+    }
+
+    document.getElementById('census-farmers-list').innerHTML = topFarmers.map(([fid, count], idx) => `
+      <div class="notif-item">
+        <div class="notif-icon">${idx + 1}</div>
+        <div style="flex:1">
+          <strong>${farmerNames[fid] || 'Unknown Farmer'}</strong>
+          <p class="text-sm text-gray">${count} animals registered</p>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    console.error('Census load error:', e);
+    document.getElementById('census-farmers-list').innerHTML = '<p class="text-gray text-sm">Could not load census data.</p>';
+  }
+}
+
+function refreshCensus() {
+  loadAnimalCensus(_officerProfile?.district || '');
+}
+</script>
+</body>
+</html>

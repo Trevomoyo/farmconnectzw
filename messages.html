@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Messages — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+  <style>
+    body { overflow: hidden; }
+    .msg-layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      height: calc(100vh - var(--nav-h));
+    }
+    .msg-sidebar {
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      background: var(--surface); overflow: hidden;
+      position: relative;
+    }
+    .sidebar-top {
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+    }
+    .sidebar-search { padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .sidebar-search input {
+      width: 100%; padding: 8px 14px; border-radius: 20px;
+      border: 1.5px solid var(--border-dark); font-size: .88rem;
+      background: var(--surface-2); outline: none;
+    }
+    .sidebar-search input:focus { border-color: var(--green); }
+    .thread-list { flex: 1; overflow-y: auto; }
+    .thread-item {
+      display: flex; gap: 12px; align-items: center;
+      padding: 12px 14px; cursor: pointer;
+      border-bottom: 1px solid var(--border); transition: background .15s;
+    }
+    .thread-item:hover  { background: var(--surface-2); }
+    .thread-item.active { background: var(--green-muted); }
+    .t-avatar {
+      width: 44px; height: 44px; border-radius: 50%; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--font-head); font-weight: 700; font-size: 1.1rem;
+      flex-shrink: 0; position: relative;
+    }
+    .online-dot {
+      position: absolute; bottom: 1px; right: 1px;
+      width: 11px; height: 11px; border-radius: 50%;
+      background: #2ecc71; border: 2px solid var(--surface);
+    }
+    .t-info { flex: 1; overflow: hidden; }
+    .t-name    { font-weight: 600; font-size: .92rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .t-preview { font-size: .78rem; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .t-meta    { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .t-time    { font-size: .72rem; color: var(--text-3); white-space: nowrap; }
+    .unread-dot { width: 9px; height: 9px; background: var(--green); border-radius: 50%; }
+
+    .find-panel {
+      display: none; flex-direction: column;
+      position: absolute; inset: 0; background: var(--surface); z-index: 10;
+    }
+    .find-panel.open { display: flex; }
+    .find-header { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+    .find-results { flex: 1; overflow-y: auto; }
+
+    .msg-chat {
+      display: flex; flex-direction: column;
+      background: #e5ddd5;
+      background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23000' fill-opacity='.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2zM6 4V0H4v4H0v2h4v4h2V6h4V4z'/%3E%3C/g%3E%3C/svg%3E");
+    }
+    .chat-header {
+      padding: 10px 16px; background: #ededed; border-bottom: 1px solid #ddd;
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+    }
+    .chat-header-info { display: flex; flex-direction: column; }
+    .chat-header-name { font-size: .95rem; font-weight: 700; }
+    .chat-online-status { font-size: .75rem; color: #2ecc71; font-weight: 600; min-height: 1em; }
+    .typing-indicator  { font-size: .75rem; color: var(--text-3); font-style: italic; }
+    .back-btn { display: none; background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--green); padding: 4px 8px; }
+    .chat-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+    .bubble {
+      max-width: 72%; padding: 8px 12px; border-radius: 12px;
+      font-size: .9rem; line-height: 1.45; word-break: break-word;
+      box-shadow: 0 1px 2px rgba(0,0,0,.08);
+    }
+    .bubble-sent     { background: #dcf8c6; align-self: flex-end; border-bottom-right-radius: 3px; }
+    .bubble-received { background: #fff;    align-self: flex-start; border-bottom-left-radius: 3px; }
+    .bubble-time { font-size: .68rem; color: #888; margin-top: 4px; text-align: right; }
+
+    .msg-img  { max-width: 100%; max-height: 220px; border-radius: 8px; object-fit: cover; cursor: pointer; display: block; margin-bottom: 4px; }
+    .msg-video { max-width: 100%; max-height: 220px; border-radius: 8px; display: block; margin-bottom: 4px; }
+    .msg-audio { width: 100%; min-width: 200px; margin-bottom: 4px; }
+    .msg-doc { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,.06); border-radius: 8px; padding: 10px 12px; text-decoration: none; color: inherit; margin-bottom: 4px; }
+    .msg-doc:hover { background: rgba(0,0,0,.1); }
+    .doc-icon { font-size: 1.8rem; flex-shrink: 0; }
+
+    .chat-footer { padding: 8px 12px; background: #f0f0f0; border-top: 1px solid #ddd; flex-shrink: 0; }
+    .footer-main { display: flex; gap: 8px; align-items: flex-end; }
+    .attach-row { display: flex; gap: 6px; padding: 6px 0 0; overflow-x: auto; scrollbar-width: none; }
+    .attach-row::-webkit-scrollbar { display: none; }
+    .attach-btn {
+      width: 36px; height: 36px; border-radius: 50%; border: none;
+      background: var(--surface); display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 1rem; flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,.15); transition: background .15s;
+    }
+    .attach-btn:hover { background: var(--green-muted); }
+    .attach-btn input[type=file] { display: none; }
+    .chat-input {
+      flex: 1; padding: 10px 16px; border-radius: 22px; border: 1px solid #ddd;
+      font-size: .92rem; outline: none; max-height: 120px; resize: none; background: #fff; line-height: 1.4;
+    }
+    .send-btn {
+      width: 44px; height: 44px; border-radius: 50%; background: var(--green); color: #fff; border: none;
+      display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 1.1rem; flex-shrink: 0;
+    }
+    .send-btn:hover { background: var(--green-light); }
+
+    .voice-recorder { display: none; align-items: center; gap: 10px; padding: 10px 16px; background: #fff; border-radius: 22px; border: 2px solid var(--danger); flex: 1; }
+    .voice-recorder.recording { display: flex; }
+    .rec-pulse { width: 12px; height: 12px; border-radius: 50%; background: var(--danger); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.3;} }
+    .rec-timer { font-family: var(--font-head); font-weight: 700; color: var(--danger); }
+
+    .upload-indicator { font-size: .8rem; color: var(--text-3); padding: 4px 8px; display: none; align-items: center; gap: 6px; }
+    .upload-indicator.show { display: flex; }
+    .upload-spinner { width: 14px; height: 14px; border: 2px solid #ddd; border-top-color: var(--green); border-radius: 50%; animation: spin .6s linear infinite; }
+
+    .lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 9000; display: none; align-items: center; justify-content: center; }
+    .lightbox.open { display: flex; }
+    .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 8px; }
+    .lightbox-close { position: absolute; top: 16px; right: 20px; color: #fff; font-size: 2rem; cursor: pointer; background: none; border: none; }
+
+    .chat-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-3); gap: 12px; }
+
+    @media (max-width: 767px) {
+      .msg-layout { grid-template-columns: 1fr; }
+      .msg-chat { display: none; position: fixed; inset: 0; top: var(--nav-h); z-index: 50; }
+      .msg-chat.mobile-open { display: flex; }
+      .back-btn { display: block; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<div class="msg-layout">
+  <div class="msg-sidebar">
+    <div class="sidebar-top">
+      <h3 style="margin:0;font-size:1rem;">Chats</h3>
+      <button class="btn btn-sm btn-primary" id="new-chat-btn">✏️ New</button>
+    </div>
+    <div class="sidebar-search">
+      <input id="thread-search" placeholder="Search conversations…">
+    </div>
+    <div class="thread-list" id="thread-list">
+      <div style="padding:20px;text-align:center;color:var(--text-3);">Loading…</div>
+    </div>
+    <div class="find-panel" id="find-panel">
+      <div class="find-header">
+        <button class="btn btn-sm btn-ghost" onclick="closeFindPanel()">←</button>
+        <input id="find-search" class="form-input" style="flex:1;border-radius:20px;padding:8px 14px;" placeholder="Search by name…">
+      </div>
+      <div class="find-results" id="find-results">
+        <div style="padding:16px;text-align:center;color:var(--text-3);">Start typing…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="msg-chat" id="msg-chat">
+    <div class="chat-empty">
+      <div style="font-size:3.5rem;">💬</div>
+      <p>Select a conversation or start a new one</p>
+      <button class="btn btn-primary" id="find-farmers-btn">Find Farmers &amp; Officers</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close">✕</button>
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showToast, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  renderNavbar(getRole());
+
+  const user   = getCurrentUser();
+  const myId   = user.uid;
+  const myName = FCZ.getUserProfile()?.name || user.displayName || 'Farmer';
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let activeOtherId  = null;
+  let unsubChat      = null;
+  let allUsers       = [];
+  let threadCache    = {};
+  let onlineUsers    = new Set();
+  let mediaRecorder  = null;
+  let audioChunks    = [];
+  let recTimerInt    = null;
+  let typingTimeouts = {};
+
+  // ── Socket ───────────────────────────────────────────────────────────────
+  const socket = io(FCZ.API_URL, {
+    transports: ['polling', 'websocket'],
+    reconnectionAttempts: 5,
+    reconnectionDelay: 2000,
+    timeout: 20000
+  });
+
+  socket.on('connect', () => socket.emit('join', { userId: myId }));
+  socket.on('connect_error', err => console.warn('Socket:', err.message));
+
+  socket.on('receive_message', data => {
+    if (!activeOtherId) return;
+    if (data.senderId !== activeOtherId || data.recipientId !== myId) return;
+    const body = document.getElementById('chat-body');
+    if (!body) return;
+    if (data.firestoreId && body.querySelector('[data-id="' + data.firestoreId + '"]')) return;
+    body.insertAdjacentHTML('beforeend', renderBubble({
+      senderId:  data.senderId,
+      text:      data.text || '',
+      mediaType: data.mediaType,
+      mediaUrl:  data.mediaUrl,
+      mediaName: data.mediaName,
+      seen:      false,
+      createdAt: data.createdAt ? new Date(data.createdAt) : new Date()
+    }));
+    body.scrollTop = body.scrollHeight;
+    loadThreads();
+  });
+
+  socket.on('typing', ({ userId, userName }) => {
+    if (activeOtherId !== userId) return;
+    const statusEl = document.querySelector('.chat-online-status');
+    if (statusEl) {
+      statusEl.textContent = '';
+      statusEl.className   = 'typing-indicator chat-online-status';
+      statusEl.textContent = userName + ' is typing…';
+    }
+  });
+
+  socket.on('stop_typing', ({ userId }) => {
+    if (activeOtherId !== userId) return;
+    const el = document.querySelector('.typing-indicator');
+    if (el) {
+      el.className   = 'chat-online-status';
+      el.innerHTML = onlineUsers.has(userId) ? '<span style="color:#2ecc71;">● Online</span>' : '<span style="color:#95a5a6;">● Offline</span>';
+    }
+  });
+
+  socket.on('initial_online', ids => { onlineUsers = new Set(ids); updateOnlineUI(); });
+  socket.on('user_online',    uid  => { onlineUsers.add(uid);       updateOnlineUI(); });
+  socket.on('user_offline', ({ userId }) => { onlineUsers.delete(userId); updateOnlineUI(); });
+
+  // ── Online UI ────────────────────────────────────────────────────────────
+  function updateOnlineUI() {
+    document.querySelectorAll('.thread-item[data-uid]').forEach(item => {
+      const uid    = item.dataset.uid;
+      const avatar = item.querySelector('.t-avatar');
+      if (!avatar) return;
+      let dot = avatar.querySelector('.online-dot');
+      if (onlineUsers.has(uid)) {
+        if (!dot) { dot = document.createElement('div'); dot.className = 'online-dot'; avatar.appendChild(dot); }
+      } else {
+        dot?.remove();
+      }
+    });
+    if (activeOtherId) {
+      const statusEl = document.querySelector('.chat-online-status');
+      if (statusEl && statusEl.className.indexOf('typing-indicator') === -1) {
+        statusEl.innerHTML = onlineUsers.has(activeOtherId) ? '<span style="color:#2ecc71;">● Online</span>' : '<span style="color:#95a5a6;">● Offline</span>';
+      }
+    }
+  }
+
+  const COLOURS = ['#2D5A27','#7a3b1e','#1565c0','#6a1b9a','#c62828','#00695c','#f57c00'];
+  const aColour = id => COLOURS[(id.charCodeAt(0) + (id.charCodeAt(1) || 0)) % COLOURS.length];
+
+  function fmtTime(ts) {
+    if (!ts) return '';
+    let d;
+    if (typeof ts.toDate === 'function') {
+      d = ts.toDate();
+    } else if (ts instanceof Date) {
+      d = ts;
+    } else if (typeof ts === 'number') {
+      d = new Date(ts);
+    } else if (ts.seconds !== undefined && ts.seconds !== null) {
+      d = new Date(ts.seconds * 1000);
+    } else {
+      return '';
+    }
+    if (!d || isNaN(d.getTime())) return '';
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) {
+      return d.toLocaleTimeString('en-ZW', { hour: '2-digit', minute: '2-digit' });
+    }
+    return d.toLocaleDateString('en-ZW', { day: 'numeric', month: 'short' });
+  }
+
+  async function uploadFile(file, folder) {
+    const token = await user.getIdToken();
+    const form  = new FormData();
+    form.append('media', file);
+    const res  = await fetch(FCZ.API_URL + '/api/upload', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token },
+      body: form
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'Upload failed');
+    return data.url;
+  }
+
+  function renderBubble(m) {
+    const isMine = m.senderId === myId;
+    const cls    = isMine ? 'bubble-sent' : 'bubble-received';
+    const idAttr = m.id ? ' data-id="' + m.id + '"' : '';
+    let body = '';
+    if (m.mediaType === 'image') {
+      body = '<img class="msg-img" src="' + m.mediaUrl + '" onclick="openLightbox(\'' + m.mediaUrl + '\')" loading="lazy">' +
+             (m.text ? '<div>' + m.text + '</div>' : '');
+    } else if (m.mediaType === 'video') {
+      body = '<video class="msg-video" controls src="' + m.mediaUrl + '"></video>' +
+             (m.text ? '<div>' + m.text + '</div>' : '');
+    } else if (m.mediaType === 'audio') {
+      body = '<audio class="msg-audio" controls src="' + m.mediaUrl + '"></audio>';
+    } else if (m.mediaType === 'document') {
+      const name = m.mediaName || 'Document';
+      const icon = name.endsWith('.pdf') ? '📄' :
+                   name.match(/\.(doc|docx)$/) ? '📝' :
+                   name.match(/\.(xls|xlsx)$/) ? '📊' : '📎';
+      body = '<a class="msg-doc" href="' + m.mediaUrl + '" target="_blank" download="' + name + '">' +
+               '<span class="doc-icon">' + icon + '</span>' +
+               '<div><div style="font-weight:600;font-size:.85rem;">' + name + '</div>' +
+               '<div style="font-size:.72rem;color:#888;">Tap to open</div></div></a>';
+    } else {
+      body = m.text || '';
+    }
+    const timeStr = fmtTime(m.createdAt);
+    return '<div class="bubble ' + cls + '"' + idAttr + '>' + body +
+      '<div class="bubble-time">' + (timeStr ? timeStr : '') +
+        (isMine ? (m.seen ? ' ✓✓' : ' ✓') : '') +
+      '</div>' +
+    '</div>';
+  }
+
+  async function loadThreads() {
+    try {
+      const snap = await DB.collection('messages')
+        .where('participants', 'array-contains', myId)
+        .get();
+
+      const threads = {};
+      snap.docs.forEach(d => {
+        const m       = d.data();
+        const otherId = m.senderId === myId ? m.recipientId : m.senderId;
+        const name    = m.senderId === myId
+          ? (m.recipientName || 'User')
+          : (m.senderName    || 'User');
+
+        const ts = m.createdAt?.seconds ?? 0;
+
+        const preview = m.mediaType
+          ? ({ image:'📷 Photo', video:'🎥 Video', audio:'🎤 Voice note', document:'📎 Document' }[m.mediaType] || m.text || '')
+          : (m.text || '');
+
+        threadCache[otherId] = name;
+
+        if (!threads[otherId] || ts > threads[otherId].ts) {
+          threads[otherId] = {
+            id:     otherId,
+            name,
+            preview,
+            ts,
+            unread: m.recipientId === myId && !m.seen
+          };
+        } else if (m.recipientId === myId && !m.seen) {
+          threads[otherId].unread = true;
+        }
+      });
+
+      const q      = document.getElementById('thread-search').value.trim().toLowerCase();
+      let   sorted = Object.values(threads).sort((a, b) => b.ts - a.ts);
+      if (q) sorted = sorted.filter(t => t.name.toLowerCase().includes(q));
+
+      const list = document.getElementById('thread-list');
+      if (!sorted.length) {
+        list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-3);"><p>No chats yet.</p><p style="margin-top:8px;font-size:.85rem;">Tap ✏️ New to start</p></div>';
+        return;
+      }
+
+      list.innerHTML = sorted.map(t => {
+        const timeStr  = t.ts > 0 ? fmtTime({ seconds: t.ts }) : '';
+        const isOnline = onlineUsers.has(t.id);
+        return '<div class="thread-item' + (t.id === activeOtherId ? ' active' : '') +
+          '" data-uid="' + t.id + '" onclick="openChat(\'' + t.id + '\',\'' + t.name.replace(/'/g, "\\'") + '\')">' +
+          '<div class="t-avatar" style="background:' + aColour(t.id) + ';">' +
+            (t.name[0] || '?').toUpperCase() +
+            (isOnline ? '<div class="online-dot"></div>' : '') +
+          '</div>' +
+          '<div class="t-info">' +
+            '<div class="t-name">' + t.name + '</div>' +
+            '<div class="t-preview">' + t.preview + '</div>' +
+          '</div>' +
+          '<div class="t-meta">' +
+            (timeStr ? '<span class="t-time">' + timeStr + '</span>' : '') +
+            (t.unread ? '<div class="unread-dot"></div>' : '') +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+    } catch(e) { console.error('loadThreads:', e); }
+  }
+
+  window.openChat = (otherId, otherName) => {
+    activeOtherId = otherId;
+    threadCache[otherId] = otherName;
+
+    const chat     = document.getElementById('msg-chat');
+    const isOnline = onlineUsers.has(otherId);
+    chat.classList.add('mobile-open');
+
+    chat.innerHTML =
+      '<div class="chat-header">' +
+        '<button class="back-btn" onclick="closeMobile()">←</button>' +
+        '<div class="t-avatar" style="background:' + aColour(otherId) + ';width:38px;height:38px;font-size:.95rem;">' +
+          otherName[0].toUpperCase() +
+          (isOnline ? '<div class="online-dot"></div>' : '') +
+        '</div>' +
+        '<div class="chat-header-info">' +
+          '<span class="chat-header-name">' + otherName + '</span>' +
+          '<span class="chat-online-status">' + (isOnline ? '<span style="color:#2ecc71;">● Online</span>' : '<span style="color:#95a5a6;">● Offline</span>') + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="chat-body" id="chat-body"></div>' +
+      '<div class="upload-indicator" id="upload-indicator"><div class="upload-spinner"></div><span id="upload-label">Uploading…</span></div>' +
+      '<div class="chat-footer">' +
+        '<div class="footer-main">' +
+          '<div class="voice-recorder" id="voice-recorder">' +
+            '<div class="rec-pulse"></div>' +
+            '<span class="rec-timer" id="rec-timer">0:00</span>' +
+            '<span style="flex:1;font-size:.85rem;color:var(--text-3);">Recording…</span>' +
+            '<button class="btn btn-sm btn-danger" onclick="stopRecording(false)">Cancel</button>' +
+            '<button class="btn btn-sm btn-primary" onclick="stopRecording(true)">Send</button>' +
+          '</div>' +
+          '<textarea id="chat-input" class="chat-input" rows="1" placeholder="Type a message…" ' +
+            'onkeydown="handleKey(event,\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\')" ' +
+            'oninput="autoGrow(this);handleTyping(\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\')"></textarea>' +
+          '<button class="send-btn" onclick="sendText(\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\')">➤</button>' +
+        '</div>' +
+        '<div class="attach-row">' +
+          '<label class="attach-btn" title="Image"><input type="file" accept="image/*" onchange="sendFile(this,\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\',\'image\')">🖼️</label>' +
+          '<label class="attach-btn" title="Video"><input type="file" accept="video/*" onchange="sendFile(this,\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\',\'video\')">🎥</label>' +
+          '<label class="attach-btn" title="Document"><input type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" onchange="sendFile(this,\'' + otherId + '\',\'' + otherName.replace(/'/g, "\\'") + '\',\'document\')">📎</label>' +
+          '<button class="attach-btn" title="Voice note" onclick="startRecording()">🎤</button>' +
+        '</div>' +
+      '</div>';
+
+    socket.emit('join_chat', { chatId: otherId });
+    if (unsubChat) { unsubChat(); unsubChat = null; }
+    if (window.unsubPresence) { window.unsubPresence(); window.unsubPresence = null; }
+
+    window.unsubPresence = FCZ.DB.collection('users').doc(otherId).onSnapshot(docSnap => {
+      if (docSnap.exists) {
+        const uData = docSnap.data();
+        const isOnlineNow = uData.status === 'online' || onlineUsers.has(otherId);
+        const statusEl = document.querySelector('.chat-online-status');
+        
+        if (statusEl && statusEl.className.indexOf('typing-indicator') === -1) {
+          statusEl.innerHTML = isOnlineNow ? '<span style="color:#2ecc71;">● Online</span>' : '<span style="color:#95a5a6;">● Offline</span>';
+        }
+        
+        const headerAvatar = document.querySelector('.chat-header .t-avatar');
+        if (headerAvatar) {
+          let dot = headerAvatar.querySelector('.online-dot');
+          if (isOnlineNow && !dot) {
+            headerAvatar.insertAdjacentHTML('beforeend', '<div class="online-dot"></div>');
+          } else if (!isOnlineNow && dot) {
+            dot.remove();
+          }
+        }
+      }
+    });
+
+    unsubChat = DB.collection('messages')
+      .where('participants', 'array-contains', myId)
+      .orderBy('createdAt', 'asc')
+      .onSnapshot(snap => {
+        const body = document.getElementById('chat-body');
+        if (!body) return;
+        const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+
+        const filtered = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(m =>
+            (m.senderId === otherId && m.recipientId === myId) ||
+            (m.senderId === myId    && m.recipientId === otherId)
+          );
+
+        body.innerHTML = filtered.map(renderBubble).join('');
+        if (wasAtBottom) body.scrollTop = body.scrollHeight;
+
+        snap.docs.forEach(d => {
+          const m = d.data();
+          if (m.senderId === otherId && m.recipientId === myId && !m.seen) {
+            d.ref.update({ seen: true });
+          }
+        });
+      }, err => console.error('Chat snapshot error:', err));
+
+    loadThreads();
+  };
+
+  async function sendMessage(recipientId, recipientName, payload) {
+    const docRef = await DB.collection('messages').add({
+      senderId:      myId,
+      senderName:    myName,
+      recipientId,
+      recipientName,
+      participants:  [myId, recipientId],
+      seen:          false,
+      createdAt:     firebase.firestore.FieldValue.serverTimestamp(),
+      ...payload
+    });
+    if (socket.connected) {
+      socket.emit('send_message', {
+        firestoreId:   docRef.id,
+        senderId:      myId,
+        senderName:    myName,
+        recipientId,
+        recipientName,
+        chatId:        recipientId,
+        createdAt:     Date.now(),
+        ...payload
+      });
+    }
+  }
+
+  window.sendText = async (recipientId, recipientName) => {
+    const input = document.getElementById('chat-input');
+    const text  = (input?.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    input.style.height = 'auto';
+    try { await sendMessage(recipientId, recipientName, { text }); }
+    catch(e) { showToast('Failed to send', 'error'); }
+  };
+
+  window.sendFile = async (inputEl, recipientId, recipientName, mediaType) => {
+    const file = inputEl.files[0];
+    if (!file) return;
+    inputEl.value = '';
+    const maxMB = mediaType === 'video' ? 50 : mediaType === 'audio' ? 10 : 20;
+    if (file.size > maxMB * 1024 * 1024) {
+      showToast('File too large (max ' + maxMB + 'MB)', 'warning');
+      return;
+    }
+    const indicator = document.getElementById('upload-indicator');
+    const label     = document.getElementById('upload-label');
+    if (indicator) { label.textContent = 'Uploading ' + mediaType + '…'; indicator.classList.add('show'); }
+    try {
+      const url = await uploadFile(file, 'messages/' + mediaType);
+      await sendMessage(recipientId, recipientName, { text: '', mediaType, mediaUrl: url, mediaName: file.name });
+    } catch(e) {
+      showToast('Upload failed: ' + e.message, 'error');
+    } finally {
+      if (indicator) indicator.classList.remove('show');
+    }
+  };
+
+  window.startRecording = async () => {
+    if (!navigator.mediaDevices) { showToast('Microphone not available', 'error'); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks  = [];
+      mediaRecorder = new MediaRecorder(stream);
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(recTimerInt);
+        document.getElementById('voice-recorder')?.classList.remove('recording');
+        const inp = document.getElementById('chat-input');
+        if (inp) inp.style.display = '';
+      };
+      mediaRecorder.start();
+      document.getElementById('voice-recorder').classList.add('recording');
+      const inp = document.getElementById('chat-input');
+      if (inp) inp.style.display = 'none';
+      let secs = 0;
+      recTimerInt = setInterval(() => {
+        secs++;
+        const m = Math.floor(secs / 60), s = secs % 60;
+        const el = document.getElementById('rec-timer');
+        if (el) el.textContent = m + ':' + String(s).padStart(2, '0');
+        if (secs >= 300) stopRecording(true);
+      }, 1000);
+    } catch(e) {
+      showToast('Microphone access denied', 'error');
+    }
+  };
+
+  window.stopRecording = async (send) => {
+    if (!mediaRecorder) return;
+    const id = activeOtherId;
+    mediaRecorder.onstop = async () => {
+      clearInterval(recTimerInt);
+      document.getElementById('voice-recorder')?.classList.remove('recording');
+      const inp = document.getElementById('chat-input');
+      if (inp) inp.style.display = '';
+      if (send && id) {
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const file = new File([blob], 'voice-' + Date.now() + '.webm', { type: 'audio/webm' });
+        const indicator = document.getElementById('upload-indicator');
+        const label     = document.getElementById('upload-label');
+        if (indicator) { label.textContent = 'Sending voice note…'; indicator.classList.add('show'); }
+        try {
+          const url = await uploadFile(file, 'messages/audio');
+          await sendMessage(id, threadCache[id], { text: '', mediaType: 'audio', mediaUrl: url, mediaName: file.name });
+        } catch(e) {
+          showToast('Failed to send voice note', 'error');
+        } finally {
+          if (indicator) indicator.classList.remove('show');
+        }
+      }
+      mediaRecorder = null;
+      audioChunks   = [];
+    };
+    mediaRecorder.stop();
+  };
+
+  window.handleKey     = (e, id, name) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(id, name); } };
+  window.autoGrow      = ta => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 120) + 'px'; };
+
+  window.handleTyping  = (userId, userName) => {
+    if (!socket.connected) return;
+    socket.emit('typing', { chatId: userId, userId: myId, userName: myName });
+    if (typingTimeouts[userId]) clearTimeout(typingTimeouts[userId]);
+    typingTimeouts[userId] = setTimeout(() => {
+      socket.emit('stop_typing', { chatId: userId, userId: myId });
+      delete typingTimeouts[userId];
+    }, 1000);
+  };
+
+  window.closeMobile = () => {
+    document.getElementById('msg-chat').classList.remove('mobile-open');
+    if (activeOtherId && socket.connected) {
+      socket.emit('stop_typing', { chatId: activeOtherId, userId: myId });
+    }
+    activeOtherId = null;
+    if (unsubChat) { unsubChat(); unsubChat = null; }
+    if (window.unsubPresence) { window.unsubPresence(); window.unsubPresence = null; }
+    loadThreads();
+  };
+
+  window.openLightbox  = url => {
+    document.getElementById('lightbox-img').src = url;
+    document.getElementById('lightbox').classList.add('open');
+  };
+  window.closeLightbox = () => document.getElementById('lightbox').classList.remove('open');
+
+  async function openFindPanel() {
+    document.getElementById('find-panel').classList.add('open');
+    document.getElementById('find-search').focus();
+    if (!allUsers.length) {
+      try {
+        const snap = await DB.collection('users').limit(200).get();
+        allUsers = snap.docs
+          .filter(d => d.id !== myId)
+          .map(d => ({
+            id:   d.id,
+            name: d.data().name || d.data().email || 'User',
+            role: d.data().role || ''
+          }));
+      } catch(e) {}
+    }
+    renderFind('');
+  }
+
+  function renderFind(q) {
+    const filtered = q
+      ? allUsers.filter(u => u.name.toLowerCase().includes(q.toLowerCase()))
+      : allUsers;
+    const res = document.getElementById('find-results');
+    if (!filtered.length) {
+      res.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-3);">No users found</div>';
+      return;
+    }
+    const rl = { farmer: 'Farmer', extension_officer: 'Extension Officer', administrator: 'Admin', supplier: 'Supplier' };
+    res.innerHTML = filtered.map(u => {
+      const online = onlineUsers.has(u.id);
+      return '<div class="thread-item" data-uid="' + u.id + '" onclick="startChat(\'' + u.id + '\',\'' + u.name.replace(/'/g, "\\'") + '\')">' +
+        '<div class="t-avatar" style="background:' + aColour(u.id) + ';">' +
+          u.name[0].toUpperCase() +
+          (online ? '<div class="online-dot"></div>' : '') +
+        '</div>' +
+        '<div class="t-info">' +
+          '<div class="t-name">' + u.name + '</div>' +
+          '<div class="t-preview">' + (rl[u.role] || u.role) +
+            (online ? ' · <span style="color:#2ecc71;font-weight:600;">Online</span>' : '') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function closeFindPanel() { document.getElementById('find-panel').classList.remove('open'); }
+  window.closeFindPanel = closeFindPanel;
+  window.startChat = (id, name) => { closeFindPanel(); openChat(id, name); };
+
+  document.getElementById('find-search').addEventListener('input',  e => renderFind(e.target.value));
+  document.getElementById('thread-search').addEventListener('input', loadThreads);
+  document.getElementById('new-chat-btn').onclick     = openFindPanel;
+  document.getElementById('find-farmers-btn').onclick = openFindPanel;
+
+  const toId = new URLSearchParams(location.search).get('to');
+  await loadThreads();
+  if (toId) {
+    const name = threadCache[toId] || 'User';
+    openChat(toId, name);
+  }
+  setInterval(loadThreads, 30000);
+
+})();
+</script>
+</body>
+</html>

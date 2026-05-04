@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketplace — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css?v=1777056114">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+  <style>
+    /* ── Store Header ── */
+    .store-header {
+      background: linear-gradient(135deg, var(--green-dark), var(--green));
+      color: #fff;
+      padding: 20px var(--page-pad);
+      margin-bottom: 0;
+    }
+    .store-header h1 { color: #fff; font-size: 1.3rem; margin: 0; }
+    .store-header p  { color: rgba(255,255,255,.75); font-size: .85rem; margin-top: 2px; }
+
+    /* ── Search bar (sticky below header) ── */
+    .search-bar-wrap {
+      position: sticky;
+      top: var(--nav-h);
+      z-index: 50;
+      background: var(--surface);
+      padding: 10px var(--page-pad);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .search-bar-wrap input { flex: 1; }
+
+    /* ── Tab strip ── */
+    .tab-strip {
+      display: flex;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 0 var(--page-pad);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      gap: 0;
+    }
+    .tab-strip::-webkit-scrollbar { display: none; }
+    .tab-pill {
+      padding: 10px 18px;
+      font-size: .85rem;
+      font-weight: 600;
+      color: var(--text-3);
+      background: none;
+      border: none;
+      cursor: pointer;
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -1px;
+      transition: all .2s;
+    }
+    .tab-pill.active { color: var(--green); border-bottom-color: var(--green); }
+
+    /* ── Product grid ── */
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      padding: 14px var(--page-pad);
+    }
+    @media(min-width: 600px)  { .product-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media(min-width: 900px)  { .product-grid { grid-template-columns: repeat(4, 1fr); } }
+    @media(min-width: 1200px) { .product-grid { grid-template-columns: repeat(5, 1fr); } }
+
+    .product-card {
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      cursor: pointer;
+      position: relative;
+      transition: transform .15s, box-shadow .15s;
+      display: flex;
+      flex-direction: column;
+      text-decoration: none;
+      color: inherit;
+    }
+    .product-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,.12); }
+
+    /* ── Verified Badge (modern style) ── */
+    .verified-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px; height: 18px;
+      background: #1da1f2;
+      border-radius: 50%;
+      margin-left: 4px;
+      cursor: help;
+      position: relative;
+      vertical-align: middle;
+    }
+    .verified-badge::after {
+      content: '✓';
+      color: #fff;
+      font-size: .65rem;
+      font-weight: 800;
+    }
+    .verified-badge:hover::before {
+      content: 'Verified Supplier';
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a1a;
+      color: #fff;
+      font-size: .65rem;
+      padding: 4px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      z-index: 100;
+      font-weight: 500;
+    }
+
+    /* ── Card Action Layer ── */
+    .card-action-layer {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px 12px;
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .card-action-layer .btn { flex: 1; font-size: .75rem; padding: 8px 6px; }
+    .card-action-layer .btn-cart {
+      background: var(--green);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+    }
+    .card-action-layer .btn-cart.bounce {
+      animation: cartBounce .4s ease;
+    }
+    @keyframes cartBounce {
+      0%, 100% { transform: scale(1); }
+      30% { transform: scale(1.15); }
+      50% { transform: scale(0.95); }
+      70% { transform: scale(1.05); }
+    }
+    .card-action-layer .btn-msg {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .card-action-layer .btn-msg:hover { border-color: var(--green); background: var(--green-muted); }
+
+    .product-img-wrap {
+      position: relative;
+      aspect-ratio: 1;
+      overflow: hidden;
+      background: var(--surface-2);
+    }
+    .product-img-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .product-img-wrap .no-img {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 3rem;
+      background: linear-gradient(135deg, var(--green-muted), #fff);
+    }
+    .product-price-tag {
+      position: absolute;
+      bottom: 8px; left: 8px;
+      background: var(--green);
+      color: #fff;
+      font-family: var(--font-head);
+      font-weight: 700;
+      font-size: .88rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .product-actions-overlay {
+      position: absolute;
+      top: 8px; right: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .icon-btn {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.92);
+      border: none;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: .9rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,.15);
+      transition: background .15s;
+    }
+    .icon-btn:hover { background: #fff; }
+
+    .product-info { padding: 10px 12px 12px; }
+    .product-name { font-weight: 600; font-size: .92rem; margin-bottom: 2px; }
+    .product-seller-loc { font-size: .75rem; color: var(--text-3); display: flex; align-items: center; gap: 4px; }
+    .product-bottom { display: flex; gap: 6px; margin-top: 10px; }
+    .product-bottom .btn { flex: 1; font-size: .78rem; padding: 7px 8px; }
+
+    /* ── Cart FAB ── */
+    .cart-fab {
+      position: fixed;
+      bottom: 24px; right: 20px;
+      z-index: 300;
+      width: 54px; height: 54px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      font-size: 1.4rem;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(45,90,39,.4);
+      display: flex; align-items: center; justify-content: center;
+      transition: transform .15s;
+    }
+    .cart-fab:hover { transform: scale(1.08); }
+    .cart-fab-badge {
+      position: absolute;
+      top: -4px; right: -4px;
+      background: var(--danger);
+      color: #fff;
+      border-radius: 50%;
+      width: 20px; height: 20px;
+      font-size: .7rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Cart drawer ── */
+    .cart-drawer {
+      position: fixed;
+      right: 0; top: 0; bottom: 0;
+      width: min(360px, 100vw);
+      background: var(--surface);
+      box-shadow: var(--shadow-lg);
+      z-index: 600;
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .3s cubic-bezier(.4,0,.2,1);
+    }
+    .cart-drawer.open { transform: translateX(0); }
+    .cart-drawer-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .cart-drawer-body   { flex: 1; overflow-y: auto; padding: 12px; }
+    .cart-drawer-footer { padding: 16px; border-top: 1px solid var(--border); }
+    .cart-item { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .cart-item-img { width: 50px; height: 50px; border-radius: var(--radius-sm); object-fit: cover; background: var(--surface-2); flex-shrink: 0; display:flex;align-items:center;justify-content:center;font-size:1.5rem; overflow:hidden; }
+    .cart-item-img img { width:100%;height:100%;object-fit:cover; }
+    .cart-qty-ctrl { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+    /* ── Sell form image upload ── */
+    .img-upload-area {
+      border: 2px dashed var(--border-dark);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .img-upload-area:hover { border-color: var(--green); background: var(--green-muted); }
+    .img-upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .img-upload-progress {
+      display: none; align-items: center; justify-content: center;
+      gap: 8px; font-size: .85rem; color: var(--text-3);
+    }
+    .img-upload-progress.show { display: flex; }
+    .img-upload-spin {
+      width: 16px; height: 16px;
+      border: 2px solid #ddd; border-top-color: var(--green);
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .img-preview-wrap { display: none; margin-top: 10px; position: relative; }
+    .img-preview-wrap img { width: 100%; max-height: 180px; object-fit: cover; border-radius: var(--radius); display: block; }
+    .img-preview-wrap .remove-img {
+      position: absolute; top: 6px; right: 6px;
+      background: rgba(0,0,0,.55); color: #fff;
+      border: none; border-radius: 50%;
+      width: 26px; height: 26px; font-size: .85rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── Supplier / Delivery cards ── */
+    .supplier-card { display: flex; gap: 14px; align-items: center; padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; }
+    .sup-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--green); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.1rem; flex-shrink: 0; }
+    .delivery-card { padding: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 10px; }
+
+    /* ── My listings tab ── */
+    .my-listing-item { display: flex; gap: 12px; align-items: center; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; }
+    .my-listing-img { width: 56px; height: 56px; border-radius: var(--radius-sm); object-fit: cover; background: var(--surface-2); flex-shrink: 0; display:flex;align-items:center;justify-content:center;font-size:1.6rem;overflow:hidden; }
+    .my-listing-img img { width:100%;height:100%;object-fit:cover; }
+
+    .sctn { padding: 14px var(--page-pad); }
+  </style>
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<div class="store-header">
+  <div style="display:flex;justify-content:space-between;align-items:center;max-width:var(--page-max);margin:0 auto;">
+    <div>
+      <h1>🌾 FarmConnect Store</h1>
+      <p id="listing-count">Loading products…</p>
+    </div>
+    <button class="btn btn-accent btn-sm" id="sell-btn">+ Sell</button>
+  </div>
+</div>
+
+<div class="search-bar-wrap">
+  <input id="search-input" class="form-input" placeholder="🔍 Search products…">
+  <select id="district-filter" class="form-select" style="width:auto;max-width:130px;">
+    <option value="">All Areas</option>
+    <option>Harare</option><option>Bulawayo</option><option>Mutare</option>
+    <option>Gweru</option><option>Kwekwe</option><option>Chinhoyi</option>
+    <option>Masvingo</option><option>Bindura</option>
+  </select>
+</div>
+
+<div class="tab-strip">
+  <button class="tab-pill active" data-tab="products">🌽 Products</button>
+  <button class="tab-pill" data-tab="agri-inputs">🏪 Agri Inputs</button>
+  <button class="tab-pill" data-tab="suppliers">🏢 Suppliers</button>
+  <button class="tab-pill" data-tab="delivery">🚚 Delivery</button>
+  <button class="tab-pill" data-tab="my-listings">📋 My Listings</button>
+</div>
+
+<div id="tab-products">
+  <div style="display:flex;gap:8px;overflow-x:auto;padding:12px var(--page-pad);scrollbar-width:none;border-bottom:1px solid var(--border);">
+    <button class="btn btn-sm btn-primary cat-chip" data-cat="">All</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="crops">🌽 Crops</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="livestock">🐄 Livestock</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="poultry">🐔 Poultry</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="dairy">🥛 Dairy</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="vegetables">🥬 Vegetables</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="fruit">🍎 Fruit</button>
+    <button class="btn btn-sm btn-ghost cat-chip" data-cat="other">📦 Other</button>
+  </div>
+  <div class="product-grid" id="products-grid">
+    <p class="text-gray" style="grid-column:1/-1;padding:20px;">Loading products…</p>
+  </div>
+</div>
+
+<div id="tab-agri-inputs" class="hidden">
+  <div style="display:flex;gap:8px;overflow-x:auto;padding:12px var(--page-pad);scrollbar-width:none;border-bottom:1px solid var(--border);">
+    <button class="btn btn-sm btn-primary sup-cat-chip" data-cat="">All</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="seeds">🌱 Seeds</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="fertilizer">🧪 Fertilizer</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="chemicals">🔬 Chemicals</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="equipment">🔧 Equipment</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="animal_feed">🌾 Animal Feed</button>
+    <button class="btn btn-sm btn-ghost sup-cat-chip" data-cat="veterinary">🩺 Veterinary</button>
+  </div>
+  <div class="product-grid" id="supplier-products-grid">
+    <p class="text-gray" style="grid-column:1/-1;padding:20px;">Loading supplier products…</p>
+  </div>
+</div>
+
+<div id="tab-suppliers" class="hidden sctn">
+  <p class="text-gray mb-16">Agricultural input suppliers registered on FarmConnect</p>
+  <div id="suppliers-list"><p class="text-gray">Loading…</p></div>
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header"><h3 class="card-title">Register as Supplier</h3></div>
+    <div style="display:grid;gap:12px;">
+      <input id="sup-name"     class="form-input" placeholder="Business / Company Name *">
+      <input id="sup-category" class="form-input" placeholder="Category (e.g. Seeds, Fertilizers, Equipment) *">
+      <input id="sup-phone"    class="form-input" type="tel" placeholder="Contact phone number">
+      <input id="sup-location" class="form-input" placeholder="Location / District">
+      <textarea id="sup-desc"  class="form-textarea" rows="2" placeholder="Brief description…"></textarea>
+      <button id="register-supplier-btn" class="btn btn-primary">Register as Supplier</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-delivery" class="hidden sctn">
+  <p class="text-gray mb-16">Delivery companies serving Zimbabwe's farming communities</p>
+  <div id="delivery-list"><p class="text-gray">Loading…</p></div>
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header"><h3 class="card-title">Register Delivery Company</h3></div>
+    <div style="display:grid;gap:12px;">
+      <input id="del-name"  class="form-input" placeholder="Company Name *">
+      <input id="del-phone" class="form-input" type="tel" placeholder="Contact number *">
+      <input id="del-areas" class="form-input" placeholder="Coverage areas (e.g. Harare, Kwekwe)">
+      <input id="del-rate"  class="form-input" type="number" placeholder="Starting rate (ZiG per trip)">
+      <textarea id="del-desc" class="form-textarea" rows="2" placeholder="Vehicle type, what you deliver, etc."></textarea>
+      <button id="register-delivery-btn" class="btn btn-primary">Register Company</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-my-listings" class="hidden sctn">
+  <div id="my-listings-list"><p class="text-gray">Loading your listings…</p></div>
+</div>
+
+<button class="cart-fab" id="cart-fab">
+  🛒
+  <span class="cart-fab-badge hidden" id="cart-badge">0</span>
+</button>
+
+<div id="cart-drawer" class="cart-drawer">
+  <div class="cart-drawer-header">
+    <h3>🛍️ Cart</h3>
+    <button class="modal-close" onclick="closeCart()">✕</button>
+  </div>
+  <div class="cart-drawer-body" id="cart-body">
+    <div class="empty-state"><div class="icon">🛒</div><p>Your cart is empty</p></div>
+  </div>
+  <div class="cart-drawer-footer">
+    <div style="font-family:var(--font-head);font-size:1.2rem;font-weight:800;color:var(--green-dark);margin-bottom:10px;" id="cart-total">Total: ZiG 0</div>
+    <select id="delivery-select" class="form-select mb-16">
+      <option value="">Self-collect (no delivery)</option>
+    </select>
+    <button class="btn btn-primary btn-full" id="checkout-btn">Proceed to Checkout</button>
+  </div>
+</div>
+<div id="cart-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:599;" onclick="closeCart()"></div>
+
+<div class="modal-bg" id="sell-modal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <h3>List a Product for Sale</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('sell-modal')">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Product Photo <span class="text-gray">(optional)</span></label>
+      <div class="img-upload-area" id="upload-area">
+        <input type="file" id="s-image" accept="image/*">
+        <div id="upload-placeholder">
+          <div style="font-size:2rem;margin-bottom:6px;">📷</div>
+          <p class="text-sm text-gray">Tap to upload a photo</p>
+          <p class="text-xs text-gray">JPG, PNG — max 2MB</p>
+        </div>
+        <div class="img-upload-progress" id="upload-progress">
+          <div class="img-upload-spin"></div>
+          <span>Uploading…</span>
+        </div>
+      </div>
+      <div class="img-preview-wrap" id="img-preview-wrap">
+        <img id="img-preview" src="" alt="Preview">
+        <button class="remove-img" onclick="clearSellImage()" title="Remove">✕</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Product Name *</label>
+      <input id="s-name" class="form-input" placeholder="e.g. Maize, Tomatoes, Broilers">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select id="s-category" class="form-select">
+        <option value="crops">🌽 Crops</option>
+        <option value="livestock">🐄 Livestock</option>
+        <option value="poultry">🐔 Poultry</option>
+        <option value="dairy">🥛 Dairy</option>
+        <option value="vegetables">🥬 Vegetables</option>
+        <option value="fruit">🍎 Fruit</option>
+        <option value="other">📦 Other</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Price (ZiG) *</label>
+        <input id="s-price" class="form-input" type="number" min="0" step="0.01" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unit *</label>
+        <input id="s-unit" class="form-input" placeholder="per kg / per head">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Quantity Available</label>
+      <input id="s-qty" class="form-input" placeholder="e.g. 50 kg, 10 buckets">
+    </div>
+    <div class="form-group">
+      <label class="form-label">📍 Address / Location</label>
+      <input id="s-address" class="form-input" placeholder="e.g. Sunshine Mall, Kwekwe or Farm A5, Bindura">
+    </div>
+    <div class="form-group">
+      <label class="form-label">WhatsApp Number <span class="text-gray">(optional)</span></label>
+      <input id="s-whatsapp" class="form-input" type="tel" placeholder="e.g. 0771234567">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea id="s-desc" class="form-textarea" rows="2" placeholder="Extra details about quality, variety, etc."></textarea>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-primary" id="post-listing-btn">Post Listing</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('sell-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="product-modal">
+  <div class="modal" style="max-width:440px;padding:0;overflow:hidden;">
+    <div id="pm-img-wrap" style="position:relative;background:var(--surface-2);aspect-ratio:1;max-height:260px;overflow:hidden;display:flex;align-items:center;justify-content:center;">
+      <span id="pm-emoji" style="font-size:5rem;"></span>
+      <img id="pm-img" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;" alt="">
+    </div>
+    <div style="padding:20px;">
+      <div class="modal-header" style="margin-bottom:12px;">
+        <h3 id="pm-title"></h3>
+        <button class="modal-close" onclick="FCZ.closeModal('product-modal')">✕</button>
+      </div>
+      <div id="pm-body"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="pm-cart">🛍️ Add to Cart</button>
+        <button class="btn btn-outline" id="pm-msg">💬 Message</button>
+        <button class="btn btn-ghost" id="pm-wa" style="display:none;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.107.547 4.083 1.502 5.8L0 24l6.388-1.676A11.944 11.944 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.85 0-3.585-.5-5.082-1.373l-.364-.217-3.776.99.99-3.683-.237-.381A9.948 9.948 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg>
+          WhatsApp
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="checkout-modal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h3>Checkout</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('checkout-modal')">✕</button>
+    </div>
+    <div id="checkout-summary" class="mb-16"></div>
+    <div class="form-group">
+      <label class="form-label">Phone Number</label>
+      <input id="pay-phone" class="form-input" type="tel" placeholder="07X XXX XXXX">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Payment Method</label>
+      <select id="pay-method" class="form-select">
+        <option value="ecocash">EcoCash</option>
+        <option value="onemoney">OneMoney</option>
+        <option value="innbucks">InnBucks</option>
+        <option value="cash">Cash on Collection / Delivery</option>
+      </select>
+    </div>
+    <p class="text-sm text-gray mb-16" id="pay-note">You will receive an EcoCash prompt on your phone.</p>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" id="pay-btn">Pay Now</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('checkout-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js?v=1777056114"></script>
+<script src="js/navbar.js?v=1777056114"></script>
+<script>
+const CAT_ICON = { crops:'🌽', livestock:'🐄', poultry:'🐔', dairy:'🥛', vegetables:'🥬', fruit:'🍎', other:'📦' };
+const SUP_CAT_ICON = { seeds:'🌱', fertilizer:'🧪', chemicals:'🔬', equipment:'🔧', animal_feed:'🌾', veterinary:'🩺', other:'📦' };
+const VERIFIED_BADGE = '<span class="verified-badge" title="Verified Supplier"></span>';
+
+// ── Cart ──────────────────────────────────────────────────────────────────────
+let cart               = JSON.parse(localStorage.getItem('fcz_cart') || '[]');
+let allListings        = [];
+let allSupplierProducts = [];
+let verifiedSuppliers  = new Set(); // UIDs of suppliers whose user doc has verified:true
+let activeCategory     = '';
+let activeSupCategory  = '';
+let currentListing     = null;
+// Holds the already-uploaded URL for the sell modal — avoids double upload on submit
+let sellImageUrl       = '';
+
+function saveCart()  { localStorage.setItem('fcz_cart', JSON.stringify(cart)); }
+function cartTotal() { return cart.reduce((n, i) => n + parseFloat(i.price || 0) * (i.qty || 1), 0); }
+
+function updateBadge() {
+  const n = cart.reduce((s, i) => s + (i.qty || 1), 0);
+  const b = document.getElementById('cart-badge');
+  b.textContent = n;
+  b.classList.toggle('hidden', n === 0);
+}
+
+function addToCart(listing) {
+  const ex = cart.find(i => i.id === listing.id);
+  if (ex) ex.qty++; else cart.push({ ...listing, qty: 1, price: parseFloat(listing.price || 0) });
+  saveCart(); updateBadge();
+  FCZ.showToast(listing.name + ' added to cart', 'success');
+}
+
+function renderCart() {
+  const body = document.getElementById('cart-body');
+  if (!cart.length) {
+    body.innerHTML = '<div class="empty-state"><div class="icon">🛒</div><p>Your cart is empty</p></div>';
+    document.getElementById('cart-total').textContent = 'Total: ZiG 0';
+    return;
+  }
+  body.innerHTML = cart.map((item, i) => {
+    const thumb = item.imageUrl
+      ? '<img src="' + item.imageUrl + '" style="width:100%;height:100%;object-fit:cover;">'
+      : (CAT_ICON[item.category] || '📦');
+    return '<div class="cart-item">' +
+      '<div class="cart-item-img">' + thumb + '</div>' +
+      '<div style="flex:1;">' +
+        '<strong>' + item.name + '</strong>' +
+        '<p class="text-sm text-gray">ZiG ' + parseFloat(item.price || 0).toLocaleString() + ' ' + (item.unit || '') + '</p>' +
+        '<p class="text-sm text-gray">' + (item.sellerName || '') + '</p>' +
+        '<div class="cart-qty-ctrl">' +
+          '<button class="btn btn-sm btn-ghost" onclick="changeQty(' + i + ',-1)">−</button>' +
+          '<span>' + (item.qty || 1) + '</span>' +
+          '<button class="btn btn-sm btn-ghost" onclick="changeQty(' + i + ',1)">+</button>' +
+          '<button class="btn btn-sm btn-danger" style="margin-left:6px;" onclick="removeItem(' + i + ')">✕</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+  document.getElementById('cart-total').textContent = 'Total: ZiG ' + cartTotal().toLocaleString();
+}
+
+window.changeQty  = (i, d) => { cart[i].qty = Math.max(1, (cart[i].qty || 1) + d); saveCart(); updateBadge(); renderCart(); };
+window.removeItem = (i)    => { cart.splice(i, 1); saveCart(); updateBadge(); renderCart(); };
+
+function openCart()  { document.getElementById('cart-drawer').classList.add('open'); document.getElementById('cart-overlay').style.display = 'block'; renderCart(); }
+function closeCart() { document.getElementById('cart-drawer').classList.remove('open'); document.getElementById('cart-overlay').style.display = 'none'; }
+document.getElementById('cart-fab').onclick = openCart;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  ['products','agri-inputs','suppliers','delivery','my-listings'].forEach(t => {
+    document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+  });
+  document.querySelectorAll('.tab-pill').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  if (name === 'my-listings') loadMyListings();
+  if (name === 'suppliers')   loadSuppliers();
+  if (name === 'delivery')    loadDelivery();
+  if (name === 'agri-inputs') loadSupplierProducts();
+}
+document.querySelectorAll('.tab-pill').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+// ── Supplier product category chips ──────────────────────────────────────────
+document.querySelectorAll('.sup-cat-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sup-cat-chip').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-ghost'); });
+    btn.classList.add('btn-primary'); btn.classList.remove('btn-ghost');
+    activeSupCategory = btn.dataset.cat;
+    renderSupplierProducts();
+  });
+});
+
+// ── Render supplier products ──────────────────────────────────────────────────
+// Verified badge comes from verifiedSuppliers set (driven by user doc), NOT from
+// a per-product field — so suppliers can never self-badge.
+function renderSupplierProducts() {
+  const grid = document.getElementById('supplier-products-grid');
+  let filtered = allSupplierProducts;
+  if (activeSupCategory) filtered = filtered.filter(p => p.category === activeSupCategory);
+  if (!filtered.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">🏪</div><p>No products found</p></div>';
+    return;
+  }
+  grid.innerHTML = filtered.map(p => {
+    const isVerified = verifiedSuppliers.has(p.supplierId);
+    const badge = isVerified ? VERIFIED_BADGE : '';
+    const imgHtml = p.imageUrl
+      ? '<img src="' + p.imageUrl + '" style="width:100%;height:100%;object-fit:cover;" loading="lazy" alt="' + p.name + '">'
+      : '<div class="no-img">' + (SUP_CAT_ICON[p.category] || '📦') + '</div>';
+    const supplierName = p.supplierName || 'Supplier';
+    return '<a href="javascript:void(0)" class="product-card" onclick="openSupplierProduct(\'' + p.id + '\')">' +
+      '<div class="product-img-wrap" style="flex-shrink:0;">' +
+        imgHtml +
+        '<div class="product-price-tag">ZiG ' + parseFloat(p.price || 0).toLocaleString() + ' / ' + (p.unit || 'unit') + '</div>' +
+      '</div>' +
+      '<div class="product-info" style="flex:1;display:flex;flex-direction:column;">' +
+        '<div class="product-name">' + p.name + '</div>' +
+        '<div class="product-seller-loc">' +
+          (isVerified ? '<span style="color:#1da1f2;font-weight:600;">' + supplierName + badge + '</span>' : '🏪 ' + supplierName) +
+          (p.location ? ' <span style="color:var(--border-dark)">·</span> 📍 ' + p.location : '') +
+        '</div>' +
+        (p.description ? '<div class="text-sm text-gray" style="margin-top:4px;font-size:.75rem;flex:1;">' + p.description.slice(0, 60) + (p.description.length > 60 ? '…' : '') + '</div>' : '') +
+        '<div class="card-action-layer">' +
+          '<button class="btn btn-cart" onclick="event.preventDefault(); event.stopPropagation(); addToCartSupplier(\'' + p.id + '\')">🛒 Add</button>' +
+          (p.supplierPhone
+            ? '<button class="btn btn-msg" onclick="event.preventDefault(); event.stopPropagation(); openWASupplier(\'' + p.supplierPhone + '\',\'' + encodeURIComponent(p.name) + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg> Chat</button>'
+            : '<button class="btn btn-msg" onclick="event.preventDefault(); event.stopPropagation(); msgSupplier(\'' + p.supplierId + '\')">💬 Msg</button>'
+          ) +
+        '</div>' +
+      '</div>' +
+    '</a>';
+  }).join('');
+}
+
+// ── Add to Cart with Bounce Animation ───────────────────────────────────────
+window.addToCartSupplier = (productId) => {
+  const p = allSupplierProducts.find(x => x.id === productId);
+  if (!p) return;
+  const ex = cart.find(i => i.id === productId);
+  if (ex) ex.qty++; else cart.push({ id: p.id, name: p.name, price: parseFloat(p.price || 0), unit: p.unit || '', category: p.category || 'other', sellerName: p.supplierName || '', sellerId: p.supplierId, imageUrl: p.imageUrl || '', qty: 1 });
+  saveCart(); updateBadge();
+  // Trigger bounce animation
+  const btn = event.target.closest('.btn-cart');
+  if (btn) { btn.classList.add('bounce'); setTimeout(() => btn.classList.remove('bounce'), 400); }
+  FCZ.showToast(p.name + ' added to cart', 'success');
+};
+
+window.openWASupplier = (num, productName) => {
+  const msg = 'Hi, I\'m interested in your ' + decodeURIComponent(productName) + ' on FarmConnectZW';
+  window.open('https://wa.me/263' + num.replace(/^0/, '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
+};
+
+window.msgSupplier = (id) => { window.location.href = 'messages.html?to=' + id; };
+
+window.openSupplierProduct = (id) => { openProduct(id); };
+
+window.loadSupplierProducts = async () => {
+  const grid = document.getElementById('supplier-products-grid');
+  try {
+    const snap = await FCZ.DB.collection('supplier_products').where('status', '==', 'active').limit(60).get();
+    allSupplierProducts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderSupplierProducts();
+  } catch(e) {
+    grid.innerHTML = '<p class="text-gray" style="grid-column:1/-1;padding:20px;">Could not load supplier products.</p>';
+  }
+};
+
+// ── Product category chips ────────────────────────────────────────────────────
+document.querySelectorAll('.cat-chip').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.cat-chip').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-ghost'); });
+    btn.classList.add('btn-primary'); btn.classList.remove('btn-ghost');
+    activeCategory = btn.dataset.cat;
+    applyFilters();
+  });
+});
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function applyFilters() {
+  const q    = document.getElementById('search-input').value.trim().toLowerCase();
+  const dist = document.getElementById('district-filter').value;
+  let filtered = allListings.filter(l => l.active !== false);
+  if (q)              filtered = filtered.filter(l => (l.name || '').toLowerCase().includes(q) || (l.description || '').toLowerCase().includes(q));
+  if (activeCategory) filtered = filtered.filter(l => l.category === activeCategory);
+  if (dist)           filtered = filtered.filter(l => l.sellerDistrict === dist);
+  renderProducts(filtered);
+}
+['search-input','district-filter'].forEach(id => {
+  document.getElementById(id).addEventListener('input',  applyFilters);
+  document.getElementById(id).addEventListener('change', applyFilters);
+});
+
+// ── Render farmer products ────────────────────────────────────────────────────
+function renderProducts(listings) {
+  const grid = document.getElementById('products-grid');
+  document.getElementById('listing-count').textContent = listings.length + ' products from local farmers';
+  if (!listings.length) {
+    grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;"><div class="icon">🌽</div><p>No products found</p></div>';
+    return;
+  }
+  grid.innerHTML = listings.map(l => {
+    const imgHtml = l.imageUrl
+      ? '<img src="' + l.imageUrl + '" style="width:100%;height:100%;object-fit:cover;" loading="lazy" alt="' + l.name + '">'
+      : '<div class="no-img">' + (CAT_ICON[l.category] || '📦') + '</div>';
+    return '<a href="javascript:void(0)" class="product-card" onclick="openProduct(\'' + l.id + '\')">' +
+      '<div class="product-img-wrap" style="flex-shrink:0;">' +
+        imgHtml +
+        '<div class="product-price-tag">ZiG ' + parseFloat(l.price || 0).toLocaleString() + '</div>' +
+      '</div>' +
+      '<div class="product-info" style="flex:1;display:flex;flex-direction:column;">' +
+        '<div class="product-name">' + l.name + '</div>' +
+        '<div class="product-seller-loc">' +
+          (l.sellerName ? '👤 ' + l.sellerName : '') +
+          (l.address ? ' <span style="color:var(--border-dark)">·</span> 📍 ' + l.address : '') +
+        '</div>' +
+        '<div class="card-action-layer">' +
+          '<button class="btn btn-cart" onclick="event.preventDefault(); event.stopPropagation(); addToCartFarmer({id:\'' + l.id + '\',name:\'' + l.name.replace(/'/g, "\\'") + '\',price:' + parseFloat(l.price || 0) + ',unit:\'' + (l.unit || '').replace(/'/g, "\\'") + '\',category:\'' + (l.category || 'other') + '\',sellerName:\'' + (l.sellerName || '').replace(/'/g, "\\'") + '\',sellerId:\'' + l.sellerId + '\',imageUrl:\'' + (l.imageUrl || '') + '\'})">🛒 Add</button>' +
+          (l.whatsapp
+            ? '<button class="btn btn-msg" onclick="event.preventDefault(); event.stopPropagation(); openWAFarmer(\'' + l.whatsapp + '\',\'' + encodeURIComponent(l.name) + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="#25D366"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/></svg> Chat</button>'
+            : '<button class="btn btn-msg" onclick="event.preventDefault(); event.stopPropagation(); msgSeller(\'' + l.sellerId + '\')">💬 Msg</button>'
+          ) +
+        '</div>' +
+      '</div>' +
+    '</a>';
+  }).join('');
+}
+
+window.addToCartFarmer = (listing) => {
+  const ex = cart.find(i => i.id === listing.id);
+  if (ex) ex.qty++; else cart.push({ ...listing, qty: 1, price: parseFloat(listing.price || 0) });
+  saveCart(); updateBadge();
+  // Trigger bounce animation
+  const btn = event.target.closest('.btn-cart');
+  if (btn) { btn.classList.add('bounce'); setTimeout(() => btn.classList.remove('bounce'), 400); }
+  FCZ.showToast(listing.name + ' added to cart', 'success');
+};
+
+window.openWAFarmer = (num, productName) => {
+  const msg = 'Hi, I\'m interested in your ' + decodeURIComponent(productName) + ' on FarmConnectZW';
+  window.open('https://wa.me/263' + num.replace(/^0/, '').replace(/\D/g, '') + '?text=' + encodeURIComponent(msg), '_blank');
+};
+
+window.msgSeller = (id) => { window.location.href = 'messages.html?to=' + id; };
+
+// ── Product detail modal ──────────────────────────────────────────────────────
+window.openProduct = (id) => {
+  const l = allListings.find(x => x.id === id);
+  if (!l) return;
+  currentListing = l;
+
+  const img   = document.getElementById('pm-img');
+  const emoji = document.getElementById('pm-emoji');
+  if (l.imageUrl) { img.src = l.imageUrl; img.style.display = 'block'; emoji.style.display = 'none'; }
+  else            { img.style.display = 'none'; emoji.style.display = 'block'; emoji.textContent = CAT_ICON[l.category] || '📦'; }
+
+  document.getElementById('pm-title').textContent = l.name;
+  document.getElementById('pm-body').innerHTML =
+    '<p><span class="badge badge-neutral">' + (l.category || '—') + '</span></p>' +
+    '<p style="margin-top:10px;font-family:var(--font-head);font-size:1.5rem;font-weight:800;color:var(--green-dark);">ZiG ' + parseFloat(l.price || 0).toLocaleString() +
+      ' <span style="font-size:.85rem;font-weight:400;color:var(--text-3);">' + (l.unit || '') + '</span></p>' +
+    (l.quantity ? '<p class="text-sm text-gray">Available: ' + l.quantity + '</p>' : '') +
+    '<p class="text-sm" style="margin-top:8px;">👤 <strong>' + (l.sellerName || 'Farmer') + '</strong>' + (l.sellerDistrict ? ' · ' + l.sellerDistrict : '') + '</p>' +
+    (l.address    ? '<p class="text-sm text-gray">📍 ' + l.address + '</p>' : '') +
+    (l.description ? '<p class="text-sm" style="margin-top:8px;">' + l.description + '</p>' : '');
+
+  const waBtn = document.getElementById('pm-wa');
+  if (l.whatsapp) { 
+    waBtn.style.display = 'flex'; 
+    waBtn.onclick = () => openWAFarmer(l.whatsapp, l.name); 
+  } else waBtn.style.display = 'none';
+
+  document.getElementById('pm-cart').onclick = () => {
+    addToCart({ id: l.id, name: l.name, price: parseFloat(l.price || 0), unit: l.unit || '', category: l.category || 'other', sellerName: l.sellerName || '', sellerId: l.sellerId, imageUrl: l.imageUrl || '', qty: 1 });
+    const btn = document.getElementById('pm-cart');
+    btn.classList.add('bounce');
+    setTimeout(() => btn.classList.remove('bounce'), 400);
+    setTimeout(() => FCZ.closeModal('product-modal'), 300);
+  };
+  document.getElementById('pm-msg').onclick = () => { window.location.href = 'messages.html?to=' + l.sellerId; };
+
+  FCZ.openModal('product-modal');
+};
+
+// ── Checkout ──────────────────────────────────────────────────────────────────
+document.getElementById('checkout-btn').onclick = () => {
+  if (!cart.length) { FCZ.showToast('Cart is empty', 'warning'); return; }
+  const delivery = document.getElementById('delivery-select');
+  const fee   = delivery.value ? parseInt(delivery.options[delivery.selectedIndex].dataset.fee || 0) : 0;
+  const total = cartTotal() + fee;
+  document.getElementById('checkout-summary').innerHTML =
+    '<div style="background:var(--surface-2);border-radius:var(--radius);padding:14px;">' +
+    cart.map(i => '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:.9rem;"><span>' + i.name + ' ×' + (i.qty || 1) + '</span><span>ZiG ' + (parseFloat(i.price || 0) * (i.qty || 1)).toLocaleString() + '</span></div>').join('') +
+    (fee ? '<div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:.9rem;"><span>Delivery</span><span>ZiG ' + fee + '</span></div>' : '') +
+    '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">' +
+    '<div style="display:flex;justify-content:space-between;font-weight:700;font-size:1.05rem;"><span>Total</span><span>ZiG ' + total.toLocaleString() + '</span></div>' +
+    '</div>';
+  FCZ.openModal('checkout-modal');
+};
+
+document.getElementById('pay-method').addEventListener('change', function() {
+  const notes = { ecocash:'You will receive an EcoCash prompt on your phone.', onemoney:'You will receive a OneMoney prompt.', innbucks:'You will receive an InnBucks prompt.', cash:'Pay on collection or delivery. Seller will contact you.' };
+  document.getElementById('pay-note').textContent = notes[this.value] || '';
+});
+
+document.getElementById('pay-btn').onclick = async () => {
+  const phone  = document.getElementById('pay-phone').value.trim();
+  const method = document.getElementById('pay-method').value;
+  if (!phone && method !== 'cash') { FCZ.showToast('Enter your phone number', 'warning'); return; }
+  const btn = document.getElementById('pay-btn');
+  btn.textContent = 'Processing…'; btn.disabled = true;
+  try {
+    const user     = FCZ.getCurrentUser();
+    const token    = await user.getIdToken();
+    const delivery = document.getElementById('delivery-select');
+    const fee      = delivery.value ? parseInt(delivery.options[delivery.selectedIndex].dataset.fee || 0) : 0;
+    const total    = cartTotal() + fee;
+    const res      = await fetch(FCZ.API_URL + '/api/payment/initiate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ phone, method, amount: total, items: cart })
+    });
+    const data = await res.json();
+    if (data.success) {
+      await FCZ.DB.collection('orders').add({
+        buyerId: user.uid, buyerName: user.displayName || user.email,
+        items: cart, total, method, phone,
+        status: method === 'cash' ? 'pending_collection' : 'payment_initiated',
+        reference: data.reference || null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      cart = []; saveCart(); updateBadge();
+      FCZ.closeModal('checkout-modal');
+      FCZ.showToast(method === 'cash' ? 'Order placed! Seller will contact you.' : 'Payment initiated! Check your phone.', 'success', 6000);
+    } else {
+      FCZ.showToast('Payment failed: ' + (data.error || 'Unknown error'), 'error');
+    }
+  } catch(e) {
+    FCZ.showToast('Error: ' + e.message, 'error');
+  } finally {
+    btn.textContent = 'Pay Now'; btn.disabled = false;
+  }
+};
+
+// ── Main init ─────────────────────────────────────────────────────────────────
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showToast, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  renderNavbar(getRole());
+  updateBadge();
+
+  const user = getCurrentUser();
+
+  // ── Load verified supplier UIDs once ─────────────────────────────────────
+  // Badge in marketplace is driven entirely by the supplier's user doc (verified:true),
+  // set only by admin via batch write when approving a verification request.
+  // Suppliers cannot set this field themselves (Firestore rules block it).
+  try {
+    const vSnap = await DB.collection('users')
+      .where('role',     '==', 'supplier')
+      .where('verified', '==', true)
+      .get();
+    verifiedSuppliers = new Set(vSnap.docs.map(d => d.id));
+  } catch(e) {
+    console.warn('Could not load verified suppliers:', e);
+  }
+
+  // ── Load listings ─────────────────────────────────────────────────────────
+  async function loadListings() {
+    try {
+      const snap = await DB.collection('listings').where('active', '==', true).limit(80).get();
+      allListings = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      applyFilters();
+    } catch(e) {
+      document.getElementById('products-grid').innerHTML =
+        '<p class="text-gray" style="grid-column:1/-1;padding:20px;">Could not load products.</p>';
+    }
+  }
+  loadListings();
+
+  // ── Sell button ───────────────────────────────────────────────────────────
+  document.getElementById('sell-btn').onclick = () => FCZ.openModal('sell-modal');
+  if (new URLSearchParams(location.search).get('sell') === '1') FCZ.openModal('sell-modal');
+
+  // ── Direct image upload for sell modal ───────────────────────────────────
+  // Uploads immediately on file select — post listing just uses sellImageUrl directly.
+  window.clearSellImage = () => {
+    sellImageUrl = '';
+    document.getElementById('s-image').value         = '';
+    document.getElementById('img-preview').src        = '';
+    document.getElementById('img-preview-wrap').style.display = 'none';
+    document.getElementById('upload-placeholder').style.display = 'block';
+  };
+
+  document.getElementById('s-image').addEventListener('change', async function () {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Image must be under 2MB', 'warning');
+      this.value = '';
+      return;
+    }
+
+    // Show local preview instantly
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('img-preview').src = e.target.result;
+      document.getElementById('img-preview-wrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+
+    // Upload immediately
+    document.getElementById('upload-placeholder').style.display = 'none';
+    document.getElementById('upload-progress').classList.add('show');
+    sellImageUrl = '';
+
+    try {
+      const token = await user.getIdToken();
+      const form  = new FormData();
+      form.append('media',   file);
+      //form.append('folder', 'listings');
+      //form.append('bucket', 'media-bucket');
+      const res  = await fetch(FCZ.API_URL + '/api/upload', {
+        method:  'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body:    form
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Upload failed');
+      sellImageUrl = data.url;
+      showToast('Image ready ✓', 'success');
+    } catch(e) {
+      showToast('Image upload failed: ' + e.message, 'error');
+      sellImageUrl = '';
+      document.getElementById('img-preview-wrap').style.display  = 'none';
+      document.getElementById('upload-placeholder').style.display = 'block';
+    } finally {
+      document.getElementById('upload-progress').classList.remove('show');
+    }
+  });
+
+  // ── Post listing ──────────────────────────────────────────────────────────
+  document.getElementById('post-listing-btn').onclick = async () => {
+    const profile  = FCZ.getUserProfile();
+    const name     = document.getElementById('s-name').value.trim();
+    const price    = parseFloat(document.getElementById('s-price').value);
+    const unit     = document.getElementById('s-unit').value.trim();
+    const qty      = document.getElementById('s-qty').value.trim();
+    const desc     = document.getElementById('s-desc').value.trim();
+    const whatsapp = document.getElementById('s-whatsapp').value.trim();
+    const category = document.getElementById('s-category').value;
+    const address  = document.getElementById('s-address').value.trim();
+
+    if (!name || isNaN(price) || price <= 0 || !unit) {
+      showToast('Name, price and unit are required', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('post-listing-btn');
+    btn.textContent = 'Posting…'; btn.disabled = true;
+
+    try {
+      await DB.collection('listings').add({
+        name, price, unit, quantity: qty, description: desc,
+        category, whatsapp, address,
+        imageUrl:       sellImageUrl,   // already uploaded (or '' if none)
+        sellerId:       user.uid,
+        sellerName:     profile?.name || user.displayName || 'Farmer',
+        sellerDistrict: profile?.district || '',
+        active:         true,
+        createdAt:      firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      showToast('Product listed!', 'success');
+      FCZ.closeModal('sell-modal');
+
+      // Reset form
+      ['s-name','s-price','s-unit','s-qty','s-desc','s-whatsapp','s-address'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      clearSellImage();
+      loadListings();
+    } catch(e) {
+      showToast('Failed: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Post Listing'; btn.disabled = false;
+    }
+  };
+
+  // ── My listings ───────────────────────────────────────────────────────────
+  window.loadMyListings = async () => {
+    const list = document.getElementById('my-listings-list');
+    try {
+      const snap   = await DB.collection('listings').where('sellerId', '==', user.uid).get();
+      if (snap.empty) {
+        list.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No listings yet</p></div>';
+        return;
+      }
+      const sorted = snap.docs.slice().sort((a, b) => (b.data().createdAt?.seconds || 0) - (a.data().createdAt?.seconds || 0));
+      list.innerHTML = sorted.map(d => {
+        const l     = d.data();
+        const thumb = l.imageUrl
+          ? '<img src="' + l.imageUrl + '" style="width:100%;height:100%;object-fit:cover;" alt="">'
+          : (CAT_ICON[l.category] || '📦');
+        return '<div class="my-listing-item">' +
+          '<div class="my-listing-img">' + thumb + '</div>' +
+          '<div style="flex:1;">' +
+            '<strong>' + l.name + '</strong>' +
+            '<p class="text-sm text-gray">ZiG ' + Number(l.price).toLocaleString() + ' ' + (l.unit || '') + (l.address ? ' · 📍 ' + l.address : '') + '</p>' +
+            '<span class="badge ' + (l.active ? 'badge-success' : 'badge-neutral') + '">' + (l.active ? 'Active' : 'Inactive') + '</span>' +
+          '</div>' +
+          '<button class="btn btn-sm btn-danger" onclick="deactivate(\'' + d.id + '\')">Remove</button>' +
+        '</div>';
+      }).join('');
+    } catch(e) { list.innerHTML = '<p class="text-gray">Could not load listings.</p>'; }
+  };
+
+  window.deactivate = async (id) => {
+    if (!confirm('Remove this listing?')) return;
+    await DB.collection('listings').doc(id).update({ active: false });
+    showToast('Listing removed', 'success');
+    loadMyListings(); loadListings();
+  };
+
+  // ── Suppliers directory ───────────────────────────────────────────────────
+  window.loadSuppliers = async () => {
+    const list = document.getElementById('suppliers-list');
+    try {
+      const snap = await DB.collection('suppliers').limit(30).get();
+      if (snap.empty) { list.innerHTML = '<p class="text-gray">No suppliers registered yet. Be the first!</p>'; return; }
+      list.innerHTML = snap.docs.map(d => {
+        const s = d.data();
+        return '<div class="supplier-card">' +
+          '<div class="sup-avatar">' + (s.name || 'S')[0].toUpperCase() + '</div>' +
+          '<div style="flex:1;"><strong>' + (s.name || 'Supplier') + '</strong>' +
+          '<p class="text-sm text-gray">' + (s.category || '') + (s.location ? ' · 📍 ' + s.location : '') + '</p>' +
+          (s.description ? '<p class="text-sm" style="margin-top:3px;">' + s.description + '</p>' : '') + '</div>' +
+          (s.phone ? '<a href="tel:' + s.phone + '" class="btn btn-sm btn-outline">📞 Call</a>' : '') +
+        '</div>';
+      }).join('');
+    } catch(e) { list.innerHTML = '<p class="text-gray">Could not load suppliers.</p>'; }
+  };
+
+  document.getElementById('register-supplier-btn').onclick = async () => {
+    const name = document.getElementById('sup-name').value.trim();
+    const cat  = document.getElementById('sup-category').value.trim();
+    if (!name || !cat) { showToast('Name and category required', 'warning'); return; }
+    const btn = document.getElementById('register-supplier-btn');
+    btn.textContent = 'Registering…'; btn.disabled = true;
+    try {
+      await DB.collection('suppliers').add({
+        name, category: cat,
+        phone:       document.getElementById('sup-phone').value.trim(),
+        location:    document.getElementById('sup-location').value.trim(),
+        description: document.getElementById('sup-desc').value.trim(),
+        registeredBy: user.uid,
+        createdAt:   firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Registered!', 'success');
+      ['sup-name','sup-category','sup-phone','sup-location','sup-desc'].forEach(id => { document.getElementById(id).value = ''; });
+      loadSuppliers();
+    } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+    finally    { btn.textContent = 'Register as Supplier'; btn.disabled = false; }
+  };
+
+  // ── Delivery ──────────────────────────────────────────────────────────────
+  window.loadDelivery = async () => {
+    const list   = document.getElementById('delivery-list');
+    const select = document.getElementById('delivery-select');
+    while (select.options.length > 1) select.remove(1);
+    try {
+      const snap = await DB.collection('deliveryCompanies').limit(20).get();
+      if (snap.empty) { list.innerHTML = '<p class="text-gray">No delivery companies yet. Register yours below!</p>'; return; }
+      snap.docs.forEach(d => {
+        const c   = d.data();
+        const opt = document.createElement('option');
+        opt.value       = d.id;
+        opt.textContent = (c.name || 'Company') + ' — from ZiG ' + (c.startingRate || '?');
+        opt.dataset.fee = c.startingRate || 0;
+        select.appendChild(opt);
+      });
+      list.innerHTML = snap.docs.map(d => {
+        const c = d.data();
+        return '<div class="delivery-card">' +
+          '<div style="display:flex;justify-content:space-between;align-items:flex-start;">' +
+            '<div><strong>' + (c.name || 'Company') + '</strong>' +
+            '<p class="text-sm text-gray" style="margin-top:2px;">📍 ' + (c.areas || '—') + '</p>' +
+            (c.description ? '<p class="text-sm" style="margin-top:4px;">' + c.description + '</p>' : '') + '</div>' +
+            '<div style="font-weight:700;color:var(--green-dark);font-size:1.05rem;">ZiG ' + (c.startingRate || '?') + '</div>' +
+          '</div>' +
+          (c.phone ? '<a href="tel:' + c.phone + '" class="btn btn-sm btn-outline" style="margin-top:10px;">📞 ' + c.phone + '</a>' : '') +
+        '</div>';
+      }).join('');
+    } catch(e) { list.innerHTML = '<p class="text-gray">Could not load delivery companies.</p>'; }
+  };
+  loadDelivery();
+
+  document.getElementById('register-delivery-btn').onclick = async () => {
+    const name  = document.getElementById('del-name').value.trim();
+    const phone = document.getElementById('del-phone').value.trim();
+    if (!name || !phone) { showToast('Name and phone required', 'warning'); return; }
+    const btn = document.getElementById('register-delivery-btn');
+    btn.textContent = 'Registering…'; btn.disabled = true;
+    try {
+      await DB.collection('deliveryCompanies').add({
+        name, phone,
+        areas:        document.getElementById('del-areas').value.trim(),
+        startingRate: parseFloat(document.getElementById('del-rate').value) || 0,
+        description:  document.getElementById('del-desc').value.trim(),
+        registeredBy: user.uid,
+        createdAt:    firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Registered!', 'success');
+      ['del-name','del-phone','del-areas','del-rate','del-desc'].forEach(id => { document.getElementById(id).value = ''; });
+      loadDelivery();
+    } catch(e) { showToast('Failed: ' + e.message, 'error'); }
+    finally    { btn.textContent = 'Register Company'; btn.disabled = false; }
+  };
+
+})();
+</script>
+</body>
+</html>

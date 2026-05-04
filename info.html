@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Legal & Information — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+  <style>
+    :root {
+      --legal-text: #444;
+      --legal-header: #1a1a1a;
+    }
+    .info-page {
+      padding: 40px var(--page-pad);
+      max-width: 900px;
+      margin: 0 auto;
+      background: #fff;
+    }
+    .legal-container {
+      line-height: 1.8;
+      color: var(--legal-text);
+      font-size: 0.95rem;
+    }
+    .legal-container h1 {
+      color: var(--green-dark);
+      font-size: 2rem;
+      margin-bottom: 10px;
+    }
+    .legal-container h2 {
+      color: var(--legal-header);
+      font-size: 1.2rem;
+      margin-top: 35px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .legal-container p { margin-bottom: 15px; }
+    .legal-container ul { margin-bottom: 20px; padding-left: 20px; }
+    .legal-container li { margin-bottom: 8px; }
+    .last-updated { font-style: italic; color: #888; margin-bottom: 30px; }
+    
+    @media (max-width: 600px) {
+      .info-page { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <nav id="navbar"></nav>
+
+  <main class="info-page">
+    <div id="legal-content" class="legal-container">
+      <p>Loading document...</p>
+    </div>
+  </main>
+
+  <script src="js/navbar.js"></script>
+  <script src="js/info-content.js"></script>
+  <script src="js/footer.js"></script>
+</body>
+</html>

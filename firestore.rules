@@ -1,0 +1,192 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ────────────────────────────────────────────────────
+    function isSignedIn()  { return request.auth != null; }
+    function isOwner(uid)  { return request.auth.uid == uid; }
+    function getUserData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function getRole()     { return getUserData().role; }
+    function isAdmin()     { return isSignedIn() && getRole() == 'administrator'; }
+    function isOfficer()   { return isSignedIn() && getRole() == 'extension_officer'; }
+    function isSupplier()  { return isSignedIn() && getRole() == 'supplier'; }
+
+    // ── Users ───────────────────────────────────────────────────────────────
+    match /users/{uid} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn() && isOwner(uid);
+      allow update: if isSignedIn() && (
+        // Users update own doc but cannot touch verified or role
+        (isOwner(uid) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'role'])) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Messages ────────────────────────────────────────────────────────────
+    match /messages/{msgId} {
+      allow read: if isSignedIn() && (
+        resource.data.senderId    == request.auth.uid ||
+        resource.data.recipientId == request.auth.uid ||
+        (resource.data.participants != null && request.auth.uid in resource.data.participants)
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.senderId == request.auth.uid &&
+        request.resource.data.participants.size() == 2 &&
+        request.auth.uid in request.resource.data.participants
+      );
+      allow update: if isSignedIn() && (
+        (request.auth.uid == resource.data.recipientId &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen'])) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Marketplace / Listings ──────────────────────────────────────────────
+    match /listings/{docId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.sellerId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.sellerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.sellerId == request.auth.uid || isAdmin());
+    }
+
+    // ── Orders ──────────────────────────────────────────────────────────────
+    match /orders/{docId} {
+      // Buyers, sellers, suppliers (who fulfil orders) and admin can all read
+      allow read: if isSignedIn() && (
+        resource.data.buyerId    == request.auth.uid ||
+        resource.data.sellerId   == request.auth.uid ||
+        resource.data.supplierId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn() && request.resource.data.buyerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        // Suppliers & sellers update status only
+        ((resource.data.sellerId == request.auth.uid || resource.data.supplierId == request.auth.uid) &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ── Livestock & Tracking ────────────────────────────────────────────────
+    match /livestock/{docId} {
+      allow read:           if isSignedIn();
+      allow create:         if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /livestockTracking/{docId} {
+      allow read:           if isSignedIn();
+      allow create:         if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Farm Management ──────────────────────────────────────────────────────
+    match /yields/{docId} {
+      allow read:           if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOfficer() || isAdmin());
+      allow create:         if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /expenses/{docId} {
+      allow read:           if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOfficer() || isAdmin());
+      allow create:         if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /farm_animals/{docId} {
+      allow read:           if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOfficer() || isAdmin());
+      allow create:         if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /animal_health/{docId} {
+      allow read:           if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOfficer() || isAdmin());
+      allow create:         if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── Alerts / Notices ────────────────────────────────────────────────────
+    match /alerts/{docId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Market Prices ────────────────────────────────────────────────────────
+    match /marketPrices/{docId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Knowledge Articles ───────────────────────────────────────────────────
+    match /knowledgeArticles/{docId} {
+      allow read:  if isSignedIn();
+      allow write: if isAdmin() || isOfficer();
+    }
+
+    // ── Suppliers directory & Delivery ───────────────────────────────────────
+    match /suppliers/{docId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.registeredBy == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── Supplier Products ────────────────────────────────────────────────────
+    // Suppliers manage their own products.
+    // The `verified` field is ADMIN-ONLY — suppliers cannot set or change it.
+    match /supplier_products/{docId} {
+      allow read: if isSignedIn();
+
+      // Create: supplier owns it, verified must NOT be included in the write
+      allow create: if isSignedIn() && isSupplier() &&
+        request.resource.data.supplierId == request.auth.uid &&
+        !('verified' in request.resource.data);
+
+      // Update: supplier edits their own — cannot touch verified.
+      //         Admin can edit anything including verified.
+      allow update: if isSignedIn() && (
+        (resource.data.supplierId == request.auth.uid &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified'])) ||
+        isAdmin()
+      );
+
+      allow delete: if isSignedIn() && (resource.data.supplierId == request.auth.uid || isAdmin());
+    }
+
+    match /deliveryCompanies/{docId} {
+      allow read:   if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (resource.data.registeredBy == request.auth.uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── Verification Requests ────────────────────────────────────────────────
+    // Suppliers submit requests. Admin approves/rejects.
+    // Simple reads — no orderBy in queries so no composite index needed.
+    match /verificationRequests/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.supplierId == request.auth.uid || isAdmin()
+      );
+      allow create: if isSignedIn() && isSupplier() &&
+        request.resource.data.supplierId == request.auth.uid &&
+        request.resource.data.status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Assistance Requests ──────────────────────────────────────────────────
+    match /assistanceRequests/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.farmerId          == request.auth.uid ||
+        resource.data.assignedOfficerId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isOfficer() || isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

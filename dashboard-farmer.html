@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farmer Dashboard — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 You are offline — some data may be outdated</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+
+  <div class="page-header flex-between">
+    <div>
+      <h1 id="welcome">Welcome, Farmer 👋</h1>
+      <p id="today-date" class="text-gray"></p>
+    </div>
+  </div>
+
+  <div class="stats-grid mb-24">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-livestock">—</div>
+      <div class="stat-label">Total Livestock</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-farm">—</div>
+      <div class="stat-label">Farm Size (ha)</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-messages">—</div>
+      <div class="stat-label">Unread Messages</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-label">Active Alerts</div>
+    </div>
+  </div>
+
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+    <div class="action-grid">
+      <a href="livestock-tracking.html"   class="btn btn-primary">🐄 Livestock</a>
+      <a href="map.html"                  class="btn btn-secondary">🗺️ Farm Map</a>
+      <a href="market-prices.html"        class="btn btn-accent">📊 Market Prices</a>
+      <a href="marketplace.html?sell=1"   class="btn btn-primary">🛒 Sell Product</a>
+      <a href="marketplace.html"          class="btn btn-outline">🛍️ Marketplace</a>
+      <a href="messages.html"             class="btn btn-outline">💬 Messages</a>
+      <a href="knowledge-hub.html"        class="btn btn-outline">📚 Learn</a>
+      <a href="profile.html"              class="btn btn-outline">👤 Profile</a>
+    </div>
+  </div>
+
+  <div class="card mb-24" id="weather-card">
+    <div class="card-header">
+      <h3 class="card-title">🌤️ Current Weather</h3>
+      <span class="text-sm text-gray" id="weather-location">—</span>
+    </div>
+    <div id="weather-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;align-items:center;">
+      <p class="text-gray text-sm">Loading weather…</p>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Recent Alerts</h3>
+        <a href="notifications.html" class="btn btn-sm btn-outline">View All</a>
+      </div>
+      <div id="alerts-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Farm Location</h3></div>
+      <div id="mini-map" style="height:250px;" class="map-wrap"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <div class="card-header">
+      <h3 class="card-title">🛒 Latest Listings</h3>
+      <a href="marketplace.html" class="btn btn-sm btn-primary">Full Marketplace</a>
+    </div>
+    <div id="listings-preview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+      <p class="text-gray text-sm">Loading…</p>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, hideLoading, initOfflineBanner, API_URL } = FCZ;
+
+  const miniMap = L.map('mini-map').setView([-19.0, 30.0], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(miniMap);
+
+  initOfflineBanner();
+
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const profile = await loadProfile();
+  hideLoading();
+
+  if (typeof renderNavbar === 'function') renderNavbar(getRole());
+
+  document.getElementById('welcome').textContent    = 'Welcome, ' + (profile?.name || 'Farmer') + ' 👋';
+  document.getElementById('today-date').textContent = new Date().toLocaleDateString('en-ZW', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  if (profile) document.getElementById('stat-farm').textContent = profile.farmSize || 0;
+
+  const user = firebase.auth().currentUser;
+
+  DB.collection('livestock').where('ownerId','==',user.uid).get()
+    .then(s => { document.getElementById('stat-livestock').textContent = s.docs.reduce((n,d) => n + (Number(d.data().count)||1), 0); })
+    .catch(() => {});
+
+  DB.collection('messages').where('recipientId','==',user.uid).where('seen','==',false).get()
+    .then(s => { document.getElementById('stat-messages').textContent = s.size; })
+    .catch(() => {});
+
+  DB.collection('alerts').where('active','==',true).limit(5).get().then(s => {
+    document.getElementById('stat-alerts').textContent = s.size;
+    const list = document.getElementById('alerts-list');
+    if (s.empty) { list.innerHTML = '<p class="text-gray text-sm">No active alerts.</p>'; return; }
+    const sorted = s.docs.slice().sort((a,b) => (b.data().createdAt?.seconds||0) - (a.data().createdAt?.seconds||0));
+    list.innerHTML = sorted.map(d => {
+      const a = d.data();
+      const sev = { low:'badge-info', medium:'badge-warning', high:'badge-danger', critical:'badge-danger' }[a.severity] || 'badge-neutral';
+      return '<div class="notif-item unread"><div class="notif-icon">⚠️</div><div><strong>' + a.title + '</strong><p class="text-sm text-gray">' + a.message + '</p><span class="badge ' + sev + '">' + (a.severity||'info') + '</span></div></div>';
+    }).join('');
+  }).catch(() => { document.getElementById('alerts-list').innerHTML = '<p class="text-gray text-sm">Could not load alerts.</p>'; });
+
+  // Weather via Express server — keeps OWM key server-side, returns full data including todayMin/todayMax
+  async function loadWeather(district) {
+    const body   = document.getElementById('weather-body');
+    const locEl  = document.getElementById('weather-location');
+    const city   = (district || '').trim() || 'Harare';
+    const ctrl   = new AbortController();
+    const tid    = setTimeout(() => ctrl.abort(), 35000);
+    try {
+      const res = await fetch(API_URL + '/api/weather?district=' + encodeURIComponent(city), { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (!res.ok) throw new Error('Status ' + res.status);
+      const w = await res.json();
+      if (locEl) locEl.textContent = (w.city || city) + ', Zimbabwe';
+      body.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+          '<img src="https://openweathermap.org/img/wn/' + (w.icon||'01d') + '@2x.png" style="width:56px;height:56px;" alt="">' +
+          '<div><div style="font-size:2rem;font-weight:700;color:var(--green-dark);">' + w.temp + '°C</div>' +
+          '<div style="font-size:.9rem;text-transform:capitalize;">' + w.description + '</div></div>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">💧 Humidity: <strong>' + w.humidity + '%</strong></p>' +
+          '<p class="text-sm">🌡️ Feels like: <strong>' + (w.feelsLike ?? w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">💨 Wind: <strong>' + (w.windSpeed ?? '—') + ' m/s</strong></p>' +
+        '</div>' +
+        '<div>' +
+          '<p class="text-sm">🌅 Today low: <strong>' + (w.todayMin ?? w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">🌇 Today high: <strong>' + (w.todayMax ?? w.temp) + '°C</strong></p>' +
+          '<p class="text-sm">☁️ Clouds: <strong>' + (w.clouds ?? '—') + '%</strong></p>' +
+        '</div>';
+    } catch (e) {
+      clearTimeout(tid);
+      if (e.name === 'AbortError') {
+        body.innerHTML = '<p class="text-gray text-sm">⏳ Connecting to weather service…</p>';
+        setTimeout(() => loadWeather(district), 15000);
+      } else {
+        body.innerHTML = '<p class="text-gray text-sm">Weather unavailable — ' + e.message + '</p>';
+      }
+    }
+  }
+  loadWeather(profile?.district);
+
+  if (profile?.gpsLat && profile?.gpsLng) {
+    L.marker([profile.gpsLat, profile.gpsLng]).addTo(miniMap)
+      .bindPopup((profile.name || 'Farm') + ' — <a href="map.html">Open map</a>').openPopup();
+    miniMap.setView([profile.gpsLat, profile.gpsLng], 13);
+  }
+  setTimeout(() => miniMap.invalidateSize(), 400);
+
+  // Marketplace preview — 4 most recent, click through to full marketplace
+  DB.collection('listings').where('active','==',true).limit(20).get().then(snap => {
+    const grid = document.getElementById('listings-preview');
+    if (snap.empty) { grid.innerHTML = '<p class="text-gray text-sm">No listings yet. <a href="marketplace.html">Start selling!</a></p>'; return; }
+    const icons = { crops:'🌽', livestock:'🐄', poultry:'🐔', dairy:'🥛', vegetables:'🥬', fruit:'🍎', other:'📦' };
+    const top4  = snap.docs.slice().sort((a,b) => (b.data().createdAt?.seconds||0) - (a.data().createdAt?.seconds||0)).slice(0,4);
+    grid.innerHTML = top4.map(d => {
+      const l = d.data();
+      return '<a href="marketplace.html" style="text-decoration:none;color:inherit;">' +
+        '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;transition:border-color .15s;" onmouseover="this.style.borderColor=\'var(--green)\'" onmouseout="this.style.borderColor=\'var(--border)\'">' +
+          '<div style="font-size:1.8rem;margin-bottom:4px;">' + (icons[l.category]||'📦') + '</div>' +
+          '<strong>' + l.name + '</strong>' +
+          '<div style="font-family:var(--font-head,sans-serif);font-weight:700;color:var(--green-dark);margin-top:2px;">ZiG ' + Number(l.price).toLocaleString() + ' <span style="font-size:.78rem;font-weight:400;color:var(--text-3,#999);">' + (l.unit||'') + '</span></div>' +
+          '<p class="text-sm text-gray">by ' + (l.sellerName||'Farmer') + '</p>' +
+        '</div>' +
+      '</a>';
+    }).join('');
+  }).catch(() => { document.getElementById('listings-preview').innerHTML = '<p class="text-gray text-sm">Could not load listings.</p>'; });
+
+})();
+</script>
+<script src="js/footer.js"></script>
+</body>
+</html>

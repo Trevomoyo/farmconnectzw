@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage My Farm — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+  <style>
+    /* ── Section Tabs ── */
+    .section-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .section-tab {
+      padding: 10px 20px;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      font-weight: 600;
+      font-size: .9rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all .15s;
+    }
+    .section-tab.active {
+      background: var(--green);
+      color: #fff;
+      border-color: var(--green);
+    }
+    .section-tab:hover:not(.active) {
+      border-color: var(--green);
+    }
+
+    /* ── Dashboard Stats ── */
+    .farm-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    @media(min-width: 768px) {
+      .farm-stats-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .farm-stat-card {
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .farm-stat-value {
+      font-family: var(--font-head);
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: var(--green);
+    }
+    .farm-stat-label {
+      font-size: .75rem;
+      color: var(--text-3);
+      margin-top: 4px;
+      font-weight: 600;
+    }
+
+    /* ── Yield Cards ── */
+    .yield-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+    }
+    .yield-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 10px;
+    }
+    .yield-crop {
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .yield-season {
+      font-size: .8rem;
+      color: var(--text-3);
+    }
+    .yield-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .yield-metric {
+      text-align: center;
+    }
+    .yield-metric-value {
+      font-weight: 700;
+      color: var(--green-dark);
+    }
+    .yield-metric-label {
+      font-size: .72rem;
+      color: var(--text-3);
+    }
+
+    /* ── Expense Items ── */
+    .expense-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      border: 1px solid var(--border);
+    }
+    .expense-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius);
+      background: var(--warning-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.3rem;
+    }
+    .expense-details {
+      flex: 1;
+    }
+    .expense-title {
+      font-weight: 600;
+    }
+    .expense-meta {
+      font-size: .8rem;
+      color: var(--text-3);
+    }
+    .expense-amount {
+      font-family: var(--font-head);
+      font-weight: 700;
+      color: var(--danger);
+    }
+
+    /* ── Animal Health Timeline ── */
+    .health-timeline {
+      position: relative;
+      padding-left: 24px;
+    }
+    .health-timeline::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+    .health-event {
+      position: relative;
+      padding: 12px;
+      background: var(--surface);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      border: 1px solid var(--border);
+    }
+    .health-event::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 16px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 2px solid var(--surface);
+    }
+    .health-event-type {
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .health-event-date {
+      font-size: .75rem;
+      color: var(--text-3);
+    }
+    .health-event-notes {
+      font-size: .85rem;
+      color: var(--text-2);
+      margin-top: 6px;
+    }
+
+    /* ── Animal Detail Modal ── */
+    .animal-detail-section {
+      margin-bottom: 20px;
+    }
+    .animal-detail-section h4 {
+      font-size: .95rem;
+      margin-bottom: 10px;
+      color: var(--green-dark);
+    }
+
+    /* ── Charts placeholder ── */
+    .chart-container {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px;
+      border: 1px solid var(--border);
+      min-height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-3);
+    }
+
+    /* ── Quick Add Buttons ── */
+    .quick-add-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header flex-between mb-24">
+    <div>
+      <h1>Manage My Farm</h1>
+      <p class="text-gray">Track yields, expenses, and animal health</p>
+    </div>
+    <button class="btn btn-primary" id="add-btn">+ Add New</button>
+  </div>
+
+  <!-- Farm Overview Stats -->
+  <div class="farm-stats-grid">
+    <div class="farm-stat-card">
+      <div class="farm-stat-value" id="stat-crops">—</div>
+      <div class="farm-stat-label">Active Crops</div>
+    </div>
+    <div class="farm-stat-card">
+      <div class="farm-stat-value" id="stat-animals">—</div>
+      <div class="farm-stat-label">Total Animals</div>
+    </div>
+    <div class="farm-stat-card">
+      <div class="farm-stat-value" id="stat-expenses">—</div>
+      <div class="farm-stat-label">This Month</div>
+    </div>
+    <div class="farm-stat-card">
+      <div class="farm-stat-value" id="stat-yield">—</div>
+      <div class="farm-stat-label">Harvested (kg)</div>
+    </div>
+  </div>
+
+  <!-- Section Tabs -->
+  <div class="section-tabs">
+    <button class="section-tab active" data-section="yields">🌾 Yields</button>
+    <button class="section-tab" data-section="expenses">💰 Expenses</button>
+    <button class="section-tab" data-section="animals">🐄 Animals</button>
+    <button class="section-tab" data-section="overview">📊 Overview</button>
+  </div>
+
+  <!-- Yields Section -->
+  <div id="section-yields" class="section-content">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Crop Yields</h3>
+        <button class="btn btn-sm btn-outline" id="add-yield-btn">+ Record Harvest</button>
+      </div>
+      <div id="yields-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Expenses Section -->
+  <div id="section-expenses" class="section-content" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Farm Expenses</h3>
+        <button class="btn btn-sm btn-outline" id="add-expense-btn">+ Add Expense</button>
+      </div>
+      <div id="expenses-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Expense Summary</h3></div>
+      <div id="expense-chart" class="chart-container">
+        <p>Expense analytics will appear here</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Animals Section -->
+  <div id="section-animals" class="section-content" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Individual Animal Records</h3>
+        <button class="btn btn-sm btn-outline" id="add-animal-btn">+ Register Animal</button>
+      </div>
+      <div id="animals-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- Overview Section -->
+  <div id="section-overview" class="section-content" style="display:none;">
+    <div class="dashboard-grid">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Yield Trends</h3></div>
+        <div id="yield-chart" class="chart-container">
+          <p>Yield trends will appear here</p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Expense Breakdown</h3></div>
+        <div id="expense-breakdown" class="chart-container">
+          <p>Expense breakdown by category</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Add Yield Modal -->
+<div class="modal-bg" id="yield-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Record Harvest</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('yield-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Crop Type</label>
+      <select id="yield-crop" class="form-select">
+        <option value="maize">Maize</option>
+        <option value="wheat">Wheat</option>
+        <option value="soybean">Soybean</option>
+        <option value="tobacco">Tobacco</option>
+        <option value="cotton">Cotton</option>
+        <option value="vegetables">Vegetables</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Season</label>
+      <input id="yield-season" class="form-input" type="text" placeholder="e.g. 2025-2026">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Area (hectares)</label>
+      <input id="yield-area" class="form-input" type="number" step="0.1" min="0" placeholder="5">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Harvested Amount (kg)</label>
+      <input id="yield-amount" class="form-input" type="number" min="0" placeholder="5000">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Estimated Value (USD)</label>
+      <input id="yield-value" class="form-input" type="number" min="0" placeholder="1500">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-yield-btn">Save Yield</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('yield-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Expense Modal -->
+<div class="modal-bg" id="expense-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Add Expense</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('expense-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select id="expense-category" class="form-select">
+        <option value="seeds">Seeds & Planting</option>
+        <option value="fertilizer">Fertilizer</option>
+        <option value="chemicals">Pesticides & Herbicides</option>
+        <option value="fuel">Fuel & Transport</option>
+        <option value="equipment">Equipment & Tools</option>
+        <option value="labor">Labor</option>
+        <option value="veterinary">Veterinary Services</option>
+        <option value="utilities">Utilities</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <input id="expense-desc" class="form-input" type="text" placeholder="e.g. 50kg DAP fertilizer">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Amount (USD)</label>
+      <input id="expense-amount" class="form-input" type="number" min="0" placeholder="150">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date</label>
+      <input id="expense-date" class="form-input" type="date">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-expense-btn">Save Expense</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('expense-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Animal Modal -->
+<div class="modal-bg" id="animal-modal">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <h3>Register Animal</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('animal-modal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Animal ID / Tag</label>
+      <input id="animal-tag" class="form-input" type="text" placeholder="e.g. COW-001">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type</label>
+      <select id="animal-type" class="form-select">
+        <option value="cattle">Cattle</option>
+        <option value="goats">Goats</option>
+        <option value="sheep">Sheep</option>
+        <option value="poultry">Poultry</option>
+        <option value="pigs">Pigs</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Breed</label>
+      <input id="animal-breed" class="form-input" type="text" placeholder="e.g. Brahman">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Date of Birth / Acquisition</label>
+      <input id="animal-dob" class="form-input" type="date">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Initial Weight (kg)</label>
+      <input id="animal-weight" class="form-input" type="number" min="0" placeholder="200">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="animal-notes" class="form-textarea" placeholder="Any initial notes..."></textarea>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-animal-btn">Register Animal</button>
+      <button class="btn btn-outline" onclick="FCZ.closeModal('animal-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Animal Health Modal -->
+<div class="modal-bg" id="health-modal">
+  <div class="modal" style="max-width:550px;">
+    <div class="modal-header">
+      <h3 id="health-animal-name">Animal Health Record</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('health-modal')">✕</button>
+    </div>
+    <div id="health-content">
+      <div class="animal-detail-section">
+        <h4>Basic Information</h4>
+        <div id="health-basic"></div>
+      </div>
+      <div class="animal-detail-section">
+        <h4>Add Health Event</h4>
+        <div class="form-group">
+          <select id="health-event-type" class="form-select">
+            <option value="vaccination">Vaccination</option>
+            <option value="treatment">Treatment</option>
+            <option value="vet_visit">Vet Visit</option>
+            <option value="weight_check">Weight Check</option>
+            <option value="deworming">Deworming</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <input id="health-event-date" class="form-input" type="date">
+        </div>
+        <div class="form-group">
+          <textarea id="health-event-notes" class="form-textarea" placeholder="Details about the health event..."></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" id="add-health-event-btn">Add Event</button>
+      </div>
+      <div class="animal-detail-section">
+        <h4>Health History</h4>
+        <div id="health-timeline" class="health-timeline">
+          <p class="text-gray text-sm">No health records yet.</p>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:16px;">
+      <button class="btn btn-outline" onclick="FCZ.closeModal('health-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser, showLoading, hideLoading, showToast, openModal, fmtDate, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading farm data…');
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  const profile = await loadProfile();
+  const user = getCurrentUser();
+
+  // Role guard - redirect non-farmers
+  if (getRole() !== 'farmer') {
+    showToast('This page is for farmers only', 'warning');
+    // Allow officers to view for census purposes
+    if (getRole() !== 'extension_officer') {
+      window.location.href = 'dashboard-farmer.html';
+      return;
+    }
+  }
+
+  hideLoading();
+  renderNavbar(getRole());
+
+  // Set default date for expense
+  document.getElementById('expense-date').valueAsDate = new Date();
+  document.getElementById('health-event-date').valueAsDate = new Date();
+
+  let currentAnimalId = null;
+
+  // ── Section Tabs ──────────────────────────────────────────────────────────
+  document.querySelectorAll('.section-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.section-content').forEach(s => s.style.display = 'none');
+      document.getElementById('section-' + tab.dataset.section).style.display = 'block';
+    });
+  });
+
+  // ── Add Button ────────────────────────────────────────────────────────────
+  document.getElementById('add-btn').addEventListener('click', () => {
+    const activeSection = document.querySelector('.section-tab.active').dataset.section;
+    if (activeSection === 'yields') openModal('yield-modal');
+    else if (activeSection === 'expenses') openModal('expense-modal');
+    else if (activeSection === 'animals') openModal('animal-modal');
+  });
+
+  // ── Load Yields ───────────────────────────────────────────────────────────
+  function loadYields() {
+    DB.collection('yields').where('ownerId', '==', user.uid).orderBy('createdAt', 'desc').get()
+      .then(snap => {
+        const list = document.getElementById('yields-list');
+        if (snap.empty) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🌾</div><p>No yields recorded yet.</p></div>`;
+          return;
+        }
+        let totalYield = 0;
+        list.innerHTML = snap.docs.map(d => {
+          const y = d.data();
+          totalYield += y.amount || 0;
+          return `<div class="yield-card">
+            <div class="yield-header">
+              <div>
+                <div class="yield-crop">${y.crop}</div>
+                <div class="yield-season">${y.season || '—'}</div>
+              </div>
+              <span class="badge badge-success">${y.area || 0} ha</span>
+            </div>
+            <div class="yield-metrics">
+              <div class="yield-metric">
+                <div class="yield-metric-value">${y.amount?.toLocaleString() || 0}</div>
+                <div class="yield-metric-label">kg harvested</div>
+              </div>
+              <div class="yield-metric">
+                <div class="yield-metric-value">${y.yieldPerHa?.toFixed(1) || 0}</div>
+                <div class="yield-metric-label">kg/ha</div>
+              </div>
+              <div class="yield-metric">
+                <div class="yield-metric-value">$${y.value?.toLocaleString() || 0}</div>
+                <div class="yield-metric-label">Value</div>
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+        document.getElementById('stat-yield').textContent = totalYield.toLocaleString();
+        document.getElementById('stat-crops').textContent = snap.size;
+      });
+  }
+
+  // ── Load Expenses ──────────────────────────────────────────────────────────
+  function loadExpenses() {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    DB.collection('expenses').where('ownerId', '==', user.uid).orderBy('date', 'desc').get()
+      .then(snap => {
+        const list = document.getElementById('expenses-list');
+        if (snap.empty) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">💰</div><p>No expenses recorded yet.</p></div>`;
+          return;
+        }
+        let monthlyTotal = 0;
+        let total = 0;
+        const icons = { seeds:'🌱', fertilizer:'🧪', chemicals:'🔬', fuel:'⛽', equipment:'🔧', labor:'👷', veterinary:'🩺', utilities:'💡', other:'📦' };
+        
+        list.innerHTML = snap.docs.map(d => {
+          const e = d.data();
+          const expenseDate = e.date?.toDate ? e.date.toDate() : new Date(e.date);
+          if (expenseDate >= startOfMonth) monthlyTotal += e.amount || 0;
+          total += e.amount || 0;
+          return `<div class="expense-item">
+            <div class="expense-icon">${icons[e.category] || '💰'}</div>
+            <div class="expense-details">
+              <div class="expense-title">${e.description}</div>
+              <div class="expense-meta">${e.category} · ${fmtDate(e.date)}</div>
+            </div>
+            <div class="expense-amount">-$${e.amount?.toLocaleString()}</div>
+          </div>`;
+        }).join('');
+        document.getElementById('stat-expenses').textContent = '$' + monthlyTotal.toLocaleString();
+      });
+  }
+
+  // ── Load Animals ───────────────────────────────────────────────────────────
+  function loadAnimals() {
+    DB.collection('farm_animals').where('ownerId', '==', user.uid).orderBy('createdAt', 'desc').get()
+      .then(snap => {
+        const list = document.getElementById('animals-list');
+        if (snap.empty) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🐄</div><p>No animals registered yet.</p></div>`;
+          return;
+        }
+        let totalAnimals = 0;
+        list.innerHTML = snap.docs.map(d => {
+          const a = d.data();
+          totalAnimals += 1;
+          const age = a.dob ? Math.floor((Date.now() - a.dob.toDate().getTime()) / (365.25*24*60*60*1000)) + ' yrs' : '—';
+          return `<div class="animal-card">
+            <div class="animal-icon">${{cattle:'🐄', goats:'🐐', sheep:'🐑', poultry:'🐔', pigs:'🐖', other:'🐾'}[a.type] || '🐾'}</div>
+            <div style="flex:1">
+              <strong>${a.animalId}</strong> · ${a.type}
+              ${a.breed ? `<span class="text-gray text-sm"> · ${a.breed}</span>` : ''}
+              <p class="text-sm text-gray">Age: ${age} · Weight: ${a.currentWeight || a.initialWeight || '—'} kg</p>
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="viewHealth('${d.id}', '${a.animalId}', '${a.type}')">🩺 Health</button>
+          </div>`;
+        }).join('');
+        document.getElementById('stat-animals').textContent = totalAnimals;
+      });
+  }
+
+  // ── Save Yield ─────────────────────────────────────────────────────────────
+  document.getElementById('save-yield-btn').addEventListener('click', async () => {
+    const crop = document.getElementById('yield-crop').value;
+    const season = document.getElementById('yield-season').value;
+    const area = parseFloat(document.getElementById('yield-area').value) || 0;
+    const amount = parseFloat(document.getElementById('yield-amount').value) || 0;
+    const value = parseFloat(document.getElementById('yield-value').value) || 0;
+
+    if (!crop || !area || !amount) {
+      showToast('Please fill in required fields', 'error');
+      return;
+    }
+
+    try {
+      await DB.collection('yields').add({
+        ownerId: user.uid,
+        crop,
+        season: season || new Date().getFullYear() + '-' + (new Date().getFullYear() + 1),
+        area,
+        amount,
+        value,
+        yieldPerHa: area > 0 ? amount / area : 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Yield recorded successfully', 'success');
+      FCZ.closeModal('yield-modal');
+      loadYields();
+      // Clear form
+      document.getElementById('yield-area').value = '';
+      document.getElementById('yield-amount').value = '';
+      document.getElementById('yield-value').value = '';
+    } catch (e) {
+      showToast('Error saving yield: ' + e.message, 'error');
+    }
+  });
+
+  // ── Save Expense ───────────────────────────────────────────────────────────
+  document.getElementById('save-expense-btn').addEventListener('click', async () => {
+    const category = document.getElementById('expense-category').value;
+    const description = document.getElementById('expense-desc').value;
+    const amount = parseFloat(document.getElementById('expense-amount').value) || 0;
+    const date = document.getElementById('expense-date').value;
+
+    if (!description || !amount || !date) {
+      showToast('Please fill in required fields', 'error');
+      return;
+    }
+
+    try {
+      await DB.collection('expenses').add({
+        ownerId: user.uid,
+        category,
+        description,
+        amount,
+        date: new Date(date),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Expense added successfully', 'success');
+      FCZ.closeModal('expense-modal');
+      loadExpenses();
+      // Clear form
+      document.getElementById('expense-desc').value = '';
+      document.getElementById('expense-amount').value = '';
+    } catch (e) {
+      showToast('Error saving expense: ' + e.message, 'error');
+    }
+  });
+
+  // ── Save Animal ───────────────────────────────────────────────────────────
+  document.getElementById('save-animal-btn').addEventListener('click', async () => {
+    const animalId = document.getElementById('animal-tag').value;
+    const type = document.getElementById('animal-type').value;
+    const breed = document.getElementById('animal-breed').value;
+    const dob = document.getElementById('animal-dob').value;
+    const initialWeight = parseFloat(document.getElementById('animal-weight').value) || 0;
+    const notes = document.getElementById('animal-notes').value;
+
+    if (!animalId || !type) {
+      showToast('Please fill in required fields', 'error');
+      return;
+    }
+
+    try {
+      const docRef = await DB.collection('farm_animals').add({
+        ownerId: user.uid,
+        animalId,
+        type,
+        breed,
+        dob: dob ? new Date(dob) : null,
+        initialWeight,
+        currentWeight: initialWeight,
+        notes,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Add initial health record
+      await DB.collection('animal_health').add({
+        animalId: docRef.id,
+        ownerId: user.uid,
+        eventType: 'registration',
+        eventDate: new Date(),
+        notes: 'Animal registered in farm management system' + (notes ? '. Initial notes: ' + notes : ''),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      showToast('Animal registered successfully', 'success');
+      FCZ.closeModal('animal-modal');
+      loadAnimals();
+      // Clear form
+      document.getElementById('animal-tag').value = '';
+      document.getElementById('animal-breed').value = '';
+      document.getElementById('animal-weight').value = '';
+      document.getElementById('animal-notes').value = '';
+    } catch (e) {
+      showToast('Error saving animal: ' + e.message, 'error');
+    }
+  });
+
+  // ── View Health ────────────────────────────────────────────────────────────
+  window.viewHealth = async function(animalDocId, animalId, type) {
+    currentAnimalId = animalDocId;
+    document.getElementById('health-animal-name').textContent = `Health Record: ${animalId}`;
+    
+    // Load basic info
+    const animalDoc = await DB.collection('farm_animals').doc(animalDocId).get();
+    const animal = animalDoc.data();
+    const age = animal.dob ? Math.floor((Date.now() - animal.dob.toDate().getTime()) / (365.25*24*60*60*1000)) + ' years' : 'Unknown';
+    
+    document.getElementById('health-basic').innerHTML = `
+      <p><strong>Type:</strong> ${animal.type} | <strong>Breed:</strong> ${animal.breed || '—'}</p>
+      <p><strong>Age:</strong> ${age} | <strong>Current Weight:</strong> ${animal.currentWeight || animal.initialWeight || '—'} kg</p>
+    `;
+
+    // Load health events
+    loadHealthEvents(animalDocId);
+    openModal('health-modal');
+  };
+
+  function loadHealthEvents(animalDocId) {
+    DB.collection('animal_health').where('animalId', '==', animalDocId).orderBy('eventDate', 'desc').get()
+      .then(snap => {
+        const timeline = document.getElementById('health-timeline');
+        if (snap.empty) {
+          timeline.innerHTML = '<p class="text-gray text-sm">No health records yet.</p>';
+          return;
+        }
+        timeline.innerHTML = snap.docs.map(d => {
+          const h = d.data();
+          const eventIcons = { vaccination:'💉', treatment:'💊', vet_visit:'🩺', weight_check:'⚖️', deworming:'🪱', registration:'📝', other:'📋' };
+          return `<div class="health-event">
+            <div class="health-event-type">${eventIcons[h.eventType] || '📋'} ${h.eventType.replace('_', ' ')}</div>
+            <div class="health-event-date">${fmtDate(h.eventDate)}</div>
+            <div class="health-event-notes">${h.notes || 'No notes'}</div>
+          </div>`;
+        }).join('');
+      });
+  }
+
+  // ── Add Health Event ───────────────────────────────────────────────────────
+  document.getElementById('add-health-event-btn').addEventListener('click', async () => {
+    if (!currentAnimalId) return;
+
+    const eventType = document.getElementById('health-event-type').value;
+    const eventDate = document.getElementById('health-event-date').value;
+    const notes = document.getElementById('health-event-notes').value;
+
+    if (!eventDate) {
+      showToast('Please select a date', 'error');
+      return;
+    }
+
+    try {
+      await DB.collection('animal_health').add({
+        animalId: currentAnimalId,
+        ownerId: user.uid,
+        eventType,
+        eventDate: new Date(eventDate),
+        notes,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // If weight check, update animal's current weight
+      if (eventType === 'weight_check' && notes) {
+        const weightMatch = notes.match(/(\d+(?:\.\d+)?)\s*kg?/i);
+        if (weightMatch) {
+          await DB.collection('farm_animals').doc(currentAnimalId).update({
+            currentWeight: parseFloat(weightMatch[1])
+          });
+        }
+      }
+
+      showToast('Health event added', 'success');
+      document.getElementById('health-event-notes').value = '';
+      loadHealthEvents(currentAnimalId);
+      loadAnimals(); // Refresh to show updated weight
+    } catch (e) {
+      showToast('Error adding health event: ' + e.message, 'error');
+    }
+  });
+
+  // ── Quick Add Buttons ─────────────────────────────────────────────────────
+  document.getElementById('add-yield-btn')?.addEventListener('click', () => openModal('yield-modal'));
+  document.getElementById('add-expense-btn')?.addEventListener('click', () => openModal('expense-modal'));
+  document.getElementById('add-animal-btn')?.addEventListener('click', () => openModal('animal-modal'));
+
+  // ── Initial Load ─────────────────────────────────────────────────────────
+  loadYields();
+  loadExpenses();
+  loadAnimals();
+
+})();
+</script>
+</body>
+</html>

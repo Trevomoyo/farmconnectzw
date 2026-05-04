@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supplier Portal — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    .supplier-header {
+      background: linear-gradient(135deg, var(--brown), #5a2d14);
+      color: #fff; padding: 24px var(--page-pad); margin: -24px -16px 24px;
+    }
+    .supplier-header h1 { color: #fff; font-size: 1.4rem; margin-bottom: 4px; }
+    .supplier-header p  { color: rgba(255,255,255,.8); font-size: .9rem; }
+
+    .supplier-stats {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 12px; margin-bottom: 24px;
+    }
+    @media(min-width: 768px) { .supplier-stats { grid-template-columns: repeat(4, 1fr); } }
+    .supplier-stat {
+      background: var(--surface); border-radius: var(--radius-lg);
+      padding: 16px; border: 1px solid var(--border); text-align: center;
+    }
+    .supplier-stat-value { font-family: var(--font-head); font-size: 1.5rem; font-weight: 800; color: var(--brown); }
+    .supplier-stat-label { font-size: .72rem; color: var(--text-3); margin-top: 4px; font-weight: 600; }
+
+    .product-manage-card {
+      display: flex; gap: 16px; padding: 16px; background: var(--surface);
+      border-radius: var(--radius); margin-bottom: 12px; border: 1px solid var(--border); align-items: center;
+    }
+    .product-manage-img {
+      width: 80px; height: 80px; border-radius: var(--radius); background: var(--surface-2);
+      overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 2rem;
+    }
+    .product-manage-img img { width: 100%; height: 100%; object-fit: cover; }
+    .product-manage-info  { flex: 1; }
+    .product-manage-name  { font-weight: 700; font-size: 1.05rem; margin-bottom: 4px; display:flex; align-items:center; flex-wrap:wrap; gap:4px; }
+    .product-manage-meta  { font-size: .85rem; color: var(--text-3); }
+    .product-manage-price { font-family: var(--font-head); font-weight: 800; font-size: 1.2rem; color: var(--green); white-space: nowrap; }
+    .product-manage-actions { display: flex; flex-direction: column; gap: 8px; }
+
+    .order-item { background: var(--surface); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; border: 1px solid var(--border); }
+    .order-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+    .order-id     { font-weight: 700; font-family: var(--font-head); }
+    .order-status { font-size: .8rem; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+    .order-status.pending   { background: var(--warning-light); color: var(--warning); }
+    .order-status.confirmed { background: var(--info-light);    color: var(--info);    }
+    .order-status.shipped   { background: var(--green-muted);   color: var(--green);   }
+    .order-status.delivered { background: var(--success-light); color: var(--success); }
+    .order-status.cancelled { background: var(--danger-light);  color: var(--danger);  }
+    .order-items-list { padding: 12px; background: var(--surface-2); border-radius: var(--radius-sm); margin-bottom: 12px; }
+    .order-item-row   { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .order-item-row:last-child { border-bottom: none; }
+    .order-total      { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.1rem; padding-top: 12px; border-top: 2px solid var(--border); }
+    .order-commission { font-size: .85rem; color: var(--text-3); margin-top: 4px; }
+
+    .portal-tabs { display: flex; gap: 8px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 4px; }
+    .portal-tab {
+      padding: 10px 20px; background: var(--surface); border: 2px solid var(--border);
+      border-radius: var(--radius); font-weight: 600; font-size: .9rem;
+      cursor: pointer; white-space: nowrap; transition: all .15s;
+    }
+    .portal-tab.active          { background: var(--brown); color: #fff; border-color: var(--brown); }
+    .portal-tab:hover:not(.active) { border-color: var(--brown); }
+
+    /* Direct image upload */
+    .img-upload-area {
+      border: 2px dashed var(--border-dark); border-radius: var(--radius);
+      padding: 20px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s; position: relative; overflow: hidden;
+    }
+    .img-upload-area:hover { border-color: var(--brown); background: #fdf5f0; }
+    .img-upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .img-preview-wrap { margin-top: 10px; position: relative; display: none; }
+    .img-preview-wrap img { width: 100%; max-height: 160px; object-fit: cover; border-radius: var(--radius); display: block; }
+    .img-preview-wrap .remove-img {
+      position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,.55); color: #fff;
+      border: none; border-radius: 50%; width: 26px; height: 26px;
+      font-size: .85rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    }
+    .img-upload-progress { display: none; align-items: center; justify-content: center; gap: 8px; padding: 8px; font-size: .85rem; color: var(--text-3); }
+    .img-upload-progress.show { display: flex; }
+    .upload-spin { width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: var(--brown); border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Verified badge */
+    .verified-badge   { background:#1565c0;color:#fff;font-size:.68rem;font-weight:700;padding:2px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:3px; }
+    .unverified-badge { background:#f0f0f0;color:#999;font-size:.68rem;font-weight:600;padding:2px 9px;border-radius:20px;display:inline-flex;align-items:center;gap:3px; }
+  </style>
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="supplier-header">
+    <h1>🏪 Supplier Portal</h1>
+    <p id="supplier-subtitle">Manage your products and orders</p>
+  </div>
+
+  <div class="supplier-stats">
+    <div class="supplier-stat"><div class="supplier-stat-value" id="stat-products">—</div><div class="supplier-stat-label">Active Products</div></div>
+    <div class="supplier-stat"><div class="supplier-stat-value" id="stat-orders">—</div><div class="supplier-stat-label">Total Orders</div></div>
+    <div class="supplier-stat"><div class="supplier-stat-value" id="stat-revenue">—</div><div class="supplier-stat-label">Total Revenue</div></div>
+    <div class="supplier-stat"><div class="supplier-stat-value" id="stat-commission">—</div><div class="supplier-stat-label">Commission Paid</div></div>
+  </div>
+
+  <div class="portal-tabs">
+    <button class="portal-tab active" data-tab="products">📦 Products</button>
+    <button class="portal-tab" data-tab="orders">📋 Orders</button>
+    <button class="portal-tab" data-tab="earnings">💰 Earnings</button>
+    <button class="portal-tab" data-tab="verification">🏅 Verification</button>
+  </div>
+
+  <div id="tab-products" class="tab-content">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">My Products</h3>
+        <button class="btn btn-primary btn-sm" id="add-product-btn">+ Add Product</button>
+      </div>
+      <div id="products-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+  </div>
+
+  <div id="tab-orders" class="tab-content" style="display:none;">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Orders</h3>
+        <select id="order-filter" class="form-select" style="width:auto;min-width:150px;">
+          <option value="all">All Orders</option>
+          <option value="pending">Pending</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+        </select>
+      </div>
+      <div id="orders-list"><p class="text-gray text-sm">Loading…</p></div>
+    </div>
+  </div>
+
+  <div id="tab-earnings" class="tab-content" style="display:none;">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Earnings Summary</h3></div>
+      <div id="earnings-summary"><div style="text-align:center;padding:40px;"><p class="text-gray">Your earnings will appear here</p></div></div>
+    </div>
+  </div>
+
+  <div id="tab-verification" class="tab-content" style="display:none;">
+    <div id="verify-status-banner" style="display:none;"></div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">🏅 Request Supplier Verification</h3></div>
+      <p class="text-sm text-gray" style="margin-bottom:16px;">
+        Verified suppliers display a blue <strong>✓ Verified</strong> badge on all their products in the marketplace,
+        building buyer trust. Submit a request and the FarmConnectZW admin team will review it.
+      </p>
+      <div id="verify-form-wrap">
+        <div class="form-group">
+          <label class="form-label">Business / Company Name *</label>
+          <input id="vr-business" class="form-input" placeholder="e.g. AgriServe Pvt Ltd">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category *</label>
+          <select id="vr-category" class="form-select">
+            <option value="seeds">Seeds</option><option value="fertilizer">Fertilizer</option>
+            <option value="chemicals">Pesticides &amp; Chemicals</option><option value="equipment">Equipment &amp; Tools</option>
+            <option value="animal_feed">Animal Feed</option><option value="veterinary">Veterinary Supplies</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Contact Phone *</label>
+          <input id="vr-phone" class="form-input" type="tel" placeholder="e.g. 0771234567">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location / District *</label>
+          <input id="vr-location" class="form-input" placeholder="e.g. Harare, Kwekwe">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Why should your business be verified? <span class="text-gray">(optional)</span></label>
+          <textarea id="vr-note" class="form-textarea" rows="3" placeholder="e.g. Years in operation, certifications, products offered…"></textarea>
+        </div>
+        <button class="btn btn-primary" id="submit-verify-btn">Submit Verification Request</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- Add/Edit Product Modal -->
+<div class="modal-bg" id="product-modal">
+  <div class="modal" style="max-width:550px;">
+    <div class="modal-header">
+      <h3 id="modal-title">Add Product</h3>
+      <button class="modal-close" onclick="resetModal()">✕</button>
+    </div>
+
+    <!-- Direct image upload — no URL entry -->
+    <div class="form-group">
+      <label class="form-label">Product Photo <span class="text-gray">(optional)</span></label>
+      <div class="img-upload-area" id="img-upload-area">
+        <input type="file" id="product-image-file" accept="image/*">
+        <div id="img-placeholder">
+          <div style="font-size:2rem;margin-bottom:6px;">📷</div>
+          <p class="text-sm text-gray">Tap to upload a photo</p>
+          <p class="text-xs text-gray">JPG, PNG — max 5MB</p>
+        </div>
+        <div class="img-upload-progress" id="img-progress">
+          <div class="upload-spin"></div><span>Uploading image…</span>
+        </div>
+      </div>
+      <div class="img-preview-wrap" id="img-preview-wrap">
+        <img id="img-preview" src="" alt="Preview">
+        <button class="remove-img" onclick="clearImage()" title="Remove image">✕</button>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Product Name *</label>
+      <input id="product-name" class="form-input" type="text" placeholder="e.g. Premium Fertilizer 50kg">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category *</label>
+      <select id="product-category" class="form-select">
+        <option value="seeds">Seeds</option><option value="fertilizer">Fertilizer</option>
+        <option value="chemicals">Pesticides &amp; Chemicals</option><option value="equipment">Equipment &amp; Tools</option>
+        <option value="animal_feed">Animal Feed</option><option value="veterinary">Veterinary Supplies</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <textarea id="product-desc" class="form-textarea" placeholder="Describe your product…"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label class="form-label">Price (USD) *</label>
+        <input id="product-price" class="form-input" type="number" min="0" step="0.01" placeholder="25.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unit</label>
+        <select id="product-unit" class="form-select">
+          <option value="bag">Bag</option><option value="kg">Kilogram</option>
+          <option value="ton">Ton</option><option value="liter">Liter</option>
+          <option value="pack">Pack</option><option value="unit">Unit</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Stock Quantity</label>
+      <input id="product-stock" class="form-input" type="number" min="0" placeholder="100">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location / District</label>
+      <input id="product-location" class="form-input" type="text" placeholder="e.g. Harare, Kwekwe">
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px;">
+      <button class="btn btn-primary" id="save-product-btn">Add Product</button>
+      <button class="btn btn-outline" onclick="resetModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div class="modal-bg" id="order-modal">
+  <div class="modal" style="max-width:500px;">
+    <div class="modal-header">
+      <h3>Order Details</h3>
+      <button class="modal-close" onclick="FCZ.closeModal('order-modal')">✕</button>
+    </div>
+    <div id="order-detail-content"></div>
+    <div style="display:flex;gap:12px;margin-top:16px;">
+      <button class="btn btn-outline" onclick="FCZ.closeModal('order-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+const COMMISSION_RATE = 0.05;
+
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, getCurrentUser,
+          showLoading, hideLoading, showToast, openModal, fmtDate,
+          initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading supplier portal…');
+
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  // CRITICAL: loadProfile() MUST complete before checking getRole().
+  // getRole() falls back to stale localStorage if _userProfile is null.
+  // We must have the Firestore profile loaded first.
+  const profile = await loadProfile();
+  const role    = getRole();   // now reads from _userProfile, not localStorage
+
+  // Role guard — redirect non-suppliers using replace() so back button works
+  if (role !== 'supplier' && role !== 'administrator') {
+    hideLoading();
+    showToast('This portal is for registered suppliers only', 'warning');
+    window.location.replace(FCZ.dashboardFor(role));
+    return;
+  }
+
+  hideLoading();
+  const user         = getCurrentUser();
+  const supplierName = profile?.name || user.displayName || 'Supplier';
+
+  renderNavbar(role);
+  document.getElementById('supplier-subtitle').textContent =
+    'Welcome, ' + supplierName + ' — manage your products and orders';
+
+  // ── Image upload state ─────────────────────────────────────────────────
+  let uploadedImageUrl = '';
+  let editingProductId = null;
+
+  document.getElementById('product-image-file').addEventListener('change', async function () {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Image must be under 5MB', 'warning');
+      this.value = '';
+      return;
+    }
+    // Instant local preview
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('img-preview').src        = e.target.result;
+      document.getElementById('img-preview-wrap').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+
+    document.getElementById('img-placeholder').style.display = 'none';
+    document.getElementById('img-progress').classList.add('show');
+    uploadedImageUrl = '';
+
+    try {
+      const token = await user.getIdToken();
+      const form  = new FormData();
+      form.append('media',   file);
+      //form.append('folder', 'supplier_products');
+      //form.append('bucket', 'media-bucket');
+      const res  = await fetch(FCZ.API_URL + '/api/upload', {
+        method:  'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body:    form
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Upload failed');
+      uploadedImageUrl = data.url;
+      showToast('Image uploaded ✓', 'success');
+    } catch(e) {
+      showToast('Image upload failed: ' + e.message, 'error');
+      uploadedImageUrl = '';
+      document.getElementById('img-preview-wrap').style.display = 'none';
+      document.getElementById('img-placeholder').style.display  = 'block';
+    } finally {
+      document.getElementById('img-progress').classList.remove('show');
+    }
+  });
+
+  window.clearImage = () => {
+    uploadedImageUrl = '';
+    document.getElementById('product-image-file').value          = '';
+    document.getElementById('img-preview').src                   = '';
+    document.getElementById('img-preview-wrap').style.display    = 'none';
+    document.getElementById('img-placeholder').style.display     = 'block';
+  };
+
+  // ── Tab navigation ─────────────────────────────────────────────────────
+  document.querySelectorAll('.portal-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.portal-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+      document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+    });
+  });
+
+  // ── Reset modal ────────────────────────────────────────────────────────
+  function resetModal() {
+    editingProductId = null;
+    document.getElementById('modal-title').textContent      = 'Add Product';
+    document.getElementById('save-product-btn').textContent = 'Add Product';
+    document.getElementById('product-name').value     = '';
+    document.getElementById('product-desc').value     = '';
+    document.getElementById('product-price').value    = '';
+    document.getElementById('product-stock').value    = '';
+    document.getElementById('product-location').value = '';
+    document.getElementById('product-category').value = 'seeds';
+    document.getElementById('product-unit').value     = 'bag';
+    clearImage();
+    FCZ.closeModal('product-modal');
+  }
+  window.resetModal = resetModal;
+
+  // ── Load products ──────────────────────────────────────────────────────
+  function loadProducts() {
+    const icons = { seeds:'🌱', fertilizer:'🧪', chemicals:'🔬', equipment:'🔧', animal_feed:'🌾', veterinary:'🩺', other:'📦' };
+    DB.collection('supplier_products').where('supplierId', '==', user.uid).get()
+      .then(snap => {
+        const list = document.getElementById('products-list');
+        if (snap.empty) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">📦</div><p>No products added yet.</p>
+            <button class="btn btn-primary" style="margin-top:12px;" id="add-first-product">Add Your First Product</button></div>`;
+          document.getElementById('add-first-product')?.addEventListener('click', () => { resetModal(); openModal('product-modal'); });
+          document.getElementById('stat-products').textContent = '0';
+          return;
+        }
+        document.getElementById('stat-products').textContent = snap.size;
+        list.innerHTML = snap.docs.map(d => {
+          const p = d.data();
+          // verified is set ONLY by admin via Firestore rules — suppliers cannot set it
+          const badge = p.verified
+            ? '<span class="verified-badge">✓ Verified</span>'
+            : '<span class="unverified-badge">Pending verification</span>';
+          const imgHtml = p.imageUrl
+            ? '<img src="' + p.imageUrl + '" alt="' + p.name + '">'
+            : (icons[p.category] || '📦');
+          return `<div class="product-manage-card">
+            <div class="product-manage-img">${imgHtml}</div>
+            <div class="product-manage-info">
+              <div class="product-manage-name">${p.name} ${badge}</div>
+              <div class="product-manage-meta">${p.category} · Stock: ${p.stock || 0} ${p.unit || ''}</div>
+              ${p.location ? '<div class="product-manage-meta">📍 ' + p.location + '</div>' : ''}
+              ${p.description ? '<div style="margin-top:4px;font-size:.8rem;color:var(--text-3)">' + p.description.slice(0,80) + (p.description.length > 80 ? '…' : '') + '</div>' : ''}
+            </div>
+            <div class="product-manage-price">$${Number(p.price).toFixed(2)}</div>
+            <div class="product-manage-actions">
+              <button class="btn btn-sm btn-outline" onclick="editProduct('${d.id}')">✏️ Edit</button>
+              <button class="btn btn-sm btn-danger"  onclick="deleteProduct('${d.id}')">🗑️ Delete</button>
+            </div>
+          </div>`;
+        }).join('');
+      })
+      .catch(e => {
+        document.getElementById('products-list').innerHTML = '<p class="text-gray">Could not load products: ' + e.message + '</p>';
+      });
+  }
+
+  // ── Save / update product ──────────────────────────────────────────────
+  async function handleSave() {
+    const name     = document.getElementById('product-name').value.trim();
+    const price    = parseFloat(document.getElementById('product-price').value);
+    const category = document.getElementById('product-category').value;
+    const desc     = document.getElementById('product-desc').value.trim();
+    const stock    = parseInt(document.getElementById('product-stock').value) || 0;
+    const unit     = document.getElementById('product-unit').value;
+    const location = document.getElementById('product-location').value.trim();
+
+    if (!name || isNaN(price) || price <= 0) {
+      showToast('Product name and a valid price are required', 'warning');
+      return;
+    }
+
+    const btn = document.getElementById('save-product-btn');
+    btn.disabled = true;
+    btn.textContent = editingProductId ? 'Updating…' : 'Adding…';
+
+    try {
+      // NEVER include 'verified' in the payload — that field belongs to admin only
+      const payload = { name, category, description: desc, price, stock, unit, location,
+                        imageUrl: uploadedImageUrl || null, status: 'active' };
+
+      if (editingProductId) {
+        await DB.collection('supplier_products').doc(editingProductId).update(payload);
+        showToast('Product updated', 'success');
+      } else {
+        await DB.collection('supplier_products').add({
+          ...payload,
+          supplierId:   user.uid,
+          supplierName: supplierName,
+          createdAt:    firebase.firestore.FieldValue.serverTimestamp()
+          // 'verified' is intentionally omitted — admin sets it after review
+        });
+        showToast('Product added', 'success');
+      }
+      resetModal();
+      loadProducts();
+    } catch(e) {
+      showToast('Error: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = editingProductId ? 'Update Product' : 'Add Product';
+    }
+  }
+  document.getElementById('save-product-btn').addEventListener('click', handleSave);
+
+  // ── Edit product ───────────────────────────────────────────────────────
+  window.editProduct = async (productId) => {
+    const doc = await DB.collection('supplier_products').doc(productId).get();
+    if (!doc.exists) { showToast('Product not found', 'error'); return; }
+    const p = doc.data();
+    editingProductId = productId;
+    document.getElementById('modal-title').textContent      = 'Edit Product';
+    document.getElementById('save-product-btn').textContent = 'Update Product';
+    document.getElementById('product-name').value     = p.name     || '';
+    document.getElementById('product-category').value = p.category || 'seeds';
+    document.getElementById('product-desc').value     = p.description || '';
+    document.getElementById('product-price').value    = p.price    || '';
+    document.getElementById('product-stock').value    = p.stock    || 0;
+    document.getElementById('product-unit').value     = p.unit     || 'bag';
+    document.getElementById('product-location').value = p.location || '';
+    if (p.imageUrl) {
+      uploadedImageUrl = p.imageUrl;
+      document.getElementById('img-preview').src             = p.imageUrl;
+      document.getElementById('img-preview-wrap').style.display = 'block';
+      document.getElementById('img-placeholder').style.display  = 'none';
+    } else {
+      clearImage();
+    }
+    openModal('product-modal');
+  };
+
+  // ── Delete product ─────────────────────────────────────────────────────
+  window.deleteProduct = async (productId) => {
+    if (!confirm('Delete this product? This cannot be undone.')) return;
+    try {
+      await DB.collection('supplier_products').doc(productId).delete();
+      showToast('Product deleted', 'success');
+      loadProducts();
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  };
+
+  // ── Load orders ────────────────────────────────────────────────────────
+  function loadOrders(statusFilter = 'all') {
+    const list = document.getElementById('orders-list');
+    list.innerHTML = '<p class="text-gray text-sm">Loading…</p>';
+    // Try with supplierId field; fall back to client-side filter
+    DB.collection('orders').where('supplierId', '==', user.uid).orderBy('createdAt', 'desc').get()
+      .catch(() =>
+        DB.collection('orders').get().then(snap => ({
+          docs: snap.docs.filter(d =>
+            (d.data().items || []).some(i => i.sellerId === user.uid || i.supplierId === user.uid)
+          )
+        }))
+      )
+      .then(snap => {
+        let orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (statusFilter !== 'all') orders = orders.filter(o => o.status === statusFilter);
+        if (!orders.length) {
+          list.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No orders yet.</p></div>';
+          document.getElementById('stat-orders').textContent    = '0';
+          document.getElementById('stat-revenue').textContent   = '$0';
+          document.getElementById('stat-commission').textContent = '$0';
+          return;
+        }
+        let totalRevenue = 0, totalCommission = 0;
+        list.innerHTML = orders.map(o => {
+          totalRevenue    += o.total || 0;
+          totalCommission += (o.total || 0) * COMMISSION_RATE;
+          return `<div class="order-item" onclick="viewOrder('${o.id}')" style="cursor:pointer;">
+            <div class="order-header">
+              <div><div class="order-id">Order #${o.id.slice(-8).toUpperCase()}</div>
+              <div class="text-sm text-gray">${fmtDate(o.createdAt)}</div></div>
+              <span class="order-status ${o.status || 'pending'}">${o.status || 'pending'}</span>
+            </div>
+            <div class="order-items-list">
+              ${(o.items || []).map(i => `<div class="order-item-row"><span>${i.name} ×${i.qty}</span><span>$${(i.price*i.qty).toFixed(2)}</span></div>`).join('')}
+            </div>
+            <div class="order-total"><span>Total</span><span>$${(o.total||0).toFixed(2)}</span></div>
+          </div>`;
+        }).join('');
+        document.getElementById('stat-orders').textContent     = orders.length;
+        document.getElementById('stat-revenue').textContent    = '$' + totalRevenue.toLocaleString();
+        document.getElementById('stat-commission').textContent = '$' + totalCommission.toFixed(2);
+      })
+      .catch(e => { list.innerHTML = '<p class="text-gray">Could not load orders.</p>'; console.error('loadOrders:', e); });
+  }
+
+  window.viewOrder = async (orderId) => {
+    const doc = await DB.collection('orders').doc(orderId).get();
+    if (!doc.exists) { showToast('Order not found', 'error'); return; }
+    const o = doc.data();
+    document.getElementById('order-detail-content').innerHTML = `
+      <div style="margin-bottom:16px;">
+        <strong>Order #${orderId.slice(-8).toUpperCase()}</strong>
+        <span class="order-status ${o.status||'pending'}" style="margin-left:12px;">${o.status||'pending'}</span>
+      </div>
+      <div style="background:var(--surface-2);padding:16px;border-radius:var(--radius);margin-bottom:16px;">
+        <p><strong>Customer:</strong> ${o.buyerName||'Unknown'}</p>
+        <p><strong>Contact:</strong> ${o.phone||'N/A'}</p>
+        <p><strong>Payment:</strong> ${o.method||'N/A'}</p>
+      </div>
+      <div class="order-items-list">
+        ${(o.items||[]).map(i=>`<div class="order-item-row"><span>${i.name} ×${i.qty}</span><span>$${(i.price*i.qty).toFixed(2)}</span></div>`).join('')}
+      </div>
+      <div class="order-total"><span>Total</span><span>$${(o.total||0).toFixed(2)}</span></div>
+      <div class="order-commission">Platform commission (5%): $${((o.total||0)*COMMISSION_RATE).toFixed(2)}</div>
+      <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+        ${o.status==='pending'   ? `<button class="btn btn-sm btn-primary" onclick="updateOrderStatus('${orderId}','confirmed')">Confirm Order</button>` : ''}
+        ${o.status==='confirmed' ? `<button class="btn btn-sm btn-primary" onclick="updateOrderStatus('${orderId}','shipped')">Mark as Shipped</button>` : ''}
+        ${o.status==='shipped'   ? `<button class="btn btn-sm btn-primary" onclick="updateOrderStatus('${orderId}','delivered')">Mark as Delivered</button>` : ''}
+        ${(o.status!=='cancelled'&&o.status!=='delivered') ? `<button class="btn btn-sm btn-danger" onclick="updateOrderStatus('${orderId}','cancelled')">Cancel Order</button>` : ''}
+      </div>`;
+    openModal('order-modal');
+  };
+
+  window.updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      await DB.collection('orders').doc(orderId).update({
+        status: newStatus, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Order updated to ' + newStatus, 'success');
+      FCZ.closeModal('order-modal');
+      loadOrders(document.getElementById('order-filter').value);
+    } catch(e) { showToast('Error: ' + e.message, 'error'); }
+  };
+
+  // ── Earnings ───────────────────────────────────────────────────────────
+  function loadEarnings() {
+    DB.collection('orders').where('supplierId', '==', user.uid).get().then(snap => {
+      const summary = document.getElementById('earnings-summary');
+      if (snap.empty) { summary.innerHTML = '<div style="text-align:center;padding:40px;"><p class="text-gray">No earnings yet.</p></div>'; return; }
+      let totalRevenue = 0, totalCommission = 0;
+      const byMonth = {};
+      snap.docs.forEach(d => {
+        const o = d.data(); const revenue = o.total||0; const commission = revenue*COMMISSION_RATE;
+        totalRevenue += revenue; totalCommission += commission;
+        const date = o.createdAt?.toDate ? o.createdAt.toDate() : new Date();
+        const mk = date.toLocaleDateString('en-US', { year:'numeric', month:'long' });
+        if (!byMonth[mk]) byMonth[mk] = { revenue:0, commission:0, orders:0 };
+        byMonth[mk].revenue += revenue; byMonth[mk].commission += commission; byMonth[mk].orders++;
+      });
+      let html = `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px;">
+        <div style="background:var(--surface-2);padding:20px;border-radius:var(--radius);text-align:center;">
+          <div style="font-size:1.8rem;font-weight:800;color:var(--green);">$${totalRevenue.toFixed(2)}</div>
+          <div style="font-size:.85rem;color:var(--text-3);">Total Revenue</div>
+        </div>
+        <div style="background:var(--surface-2);padding:20px;border-radius:var(--radius);text-align:center;">
+          <div style="font-size:1.8rem;font-weight:800;color:var(--brown);">$${totalCommission.toFixed(2)}</div>
+          <div style="font-size:.85rem;color:var(--text-3);">Commission (5%)</div>
+        </div>
+      </div><h4 style="margin-bottom:12px;">Monthly Breakdown</h4>`;
+      Object.entries(byMonth).forEach(([month,data]) => {
+        html += `<div class="order-item-row"><span>${month} <span class="text-gray">(${data.orders} orders)</span></span>
+          <span>$${data.revenue.toFixed(2)} <span class="text-gray">(-$${data.commission.toFixed(2)})</span></span></div>`;
+      });
+      summary.innerHTML = html;
+    });
+  }
+
+  // ── Verification ────────────────────────────────────────────────────────
+  // FIX: No orderBy — avoids composite index requirement. Sort client-side.
+  async function loadVerificationStatus() {
+    const banner   = document.getElementById('verify-status-banner');
+    const formWrap = document.getElementById('verify-form-wrap');
+    try {
+      // Check if already verified via admin setting the user doc
+      if (profile?.verified) {
+        banner.style.display = 'block';
+        banner.innerHTML = `<div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:1.8rem;">✓</span>
+          <div><strong style="color:#1565c0;">Your business is Verified!</strong>
+          <p class="text-sm" style="color:#1565c0;margin-top:2px;">All your products show the verified badge in the marketplace.</p></div>
+        </div>`;
+        formWrap.style.display = 'none';
+        return;
+      }
+
+      // Fetch WITHOUT orderBy to avoid composite index — sort client-side
+      const snap = await DB.collection('verificationRequests')
+        .where('supplierId', '==', user.uid)
+        .get();
+
+      if (snap.empty) return; // No request yet — form stays visible
+
+      // Sort client-side by createdAt descending to get the most recent
+      const docs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+
+      const req    = docs[0];
+      const status = req.status || 'pending';
+
+      const cfgs = {
+        pending: {
+          bg: 'var(--warning-light)', border: '#ffe082', color: 'var(--warning)',
+          icon: '⏳', title: 'Verification request submitted',
+          body: 'Your request is under review. The admin team will respond shortly.'
+        },
+        approved: {
+          bg: '#e3f2fd', border: '#90caf9', color: '#1565c0',
+          icon: '✓', title: 'Verification approved!',
+          body: 'Your products now display the verified badge in the marketplace.'
+        },
+        rejected: {
+          bg: 'var(--danger-light)', border: '#ef9a9a', color: 'var(--danger)',
+          icon: '✕', title: 'Verification request was not approved',
+          body: 'You can update your details and resubmit below.'
+        }
+      };
+
+      const cfg = cfgs[status];
+      if (!cfg) return;
+
+      banner.style.display = 'block';
+      banner.innerHTML = `<div style="background:${cfg.bg};border:1px solid ${cfg.border};border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:1.8rem;">${cfg.icon}</span>
+        <div><strong style="color:${cfg.color};">${cfg.title}</strong>
+        <p class="text-sm" style="color:${cfg.color};margin-top:2px;">${cfg.body}</p></div>
+      </div>`;
+
+      // Hide form while pending/approved; keep visible for rejected so they can resubmit
+      if (status === 'pending' || status === 'approved') formWrap.style.display = 'none';
+    } catch(e) {
+      console.warn('loadVerificationStatus:', e.message);
+    }
+  }
+
+  document.getElementById('submit-verify-btn').addEventListener('click', async () => {
+    const businessName = document.getElementById('vr-business').value.trim();
+    const category     = document.getElementById('vr-category').value;
+    const phone        = document.getElementById('vr-phone').value.trim();
+    const location     = document.getElementById('vr-location').value.trim();
+    const note         = document.getElementById('vr-note').value.trim();
+    if (!businessName || !phone || !location) {
+      showToast('Business name, phone and location are required', 'warning'); return;
+    }
+    const btn = document.getElementById('submit-verify-btn');
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    try {
+      await DB.collection('verificationRequests').add({
+        supplierId: user.uid, supplierName: supplierName,
+        businessName, category, phone, location, note: note || null,
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Request submitted! The admin team will review it shortly.', 'success', 6000);
+      loadVerificationStatus();
+    } catch(e) {
+      showToast('Failed to submit: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Submit Verification Request';
+    }
+  });
+
+  // ── Wire up buttons ────────────────────────────────────────────────────
+  document.getElementById('add-product-btn').addEventListener('click', () => { resetModal(); openModal('product-modal'); });
+  document.getElementById('order-filter').addEventListener('change', e => loadOrders(e.target.value));
+
+  // ── Initial load ───────────────────────────────────────────────────────
+  loadProducts();
+  loadOrders();
+  loadEarnings();
+  loadVerificationStatus();
+})();
+</script>
+</body>
+<script src="js/footer.js"></script>
+</html>

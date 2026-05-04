@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard — FarmConnectZW</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+  <link rel="manifest" href="manifest.json">
+  <style>
+    .verify-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      margin-bottom: 12px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .verify-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--brown), #5a2d14);
+      color: #fff; font-weight: 700; font-size: 1.1rem;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .verify-info { flex: 1; min-width: 0; }
+    .verify-name { font-weight: 700; font-size: .95rem; margin-bottom: 2px; }
+    .verify-meta { font-size: .78rem; color: var(--text-3); margin-bottom: 6px; }
+    .verify-note {
+      font-size: .82rem; color: var(--text-2);
+      background: var(--surface-2);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px; margin-bottom: 8px;
+      border-left: 3px solid var(--border-dark);
+    }
+    .verify-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: .72rem; font-weight: 700; padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .status-pill.approved { background: #e3f2fd; color: #1565c0; }
+    .status-pill.rejected { background: var(--danger-light); color: var(--danger); }
+    .status-pill.pending  { background: var(--warning-light); color: var(--warning); }
+  </style>
+</head>
+<body>
+
+<div id="offline-banner" class="offline-banner">📡 Offline</div>
+<nav class="navbar" id="navbar"></nav>
+
+<main class="page">
+  <div class="page-header">
+    <h1>Admin Dashboard 🛠️</h1>
+    <p class="text-gray">System overview and management</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid mb-24">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-farmers">—</div>
+      <div class="stat-label">Total Farmers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-officers">—</div>
+      <div class="stat-label">Officers</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-livestock">—</div>
+      <div class="stat-label">Livestock Registered</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-alerts">—</div>
+      <div class="stat-label">Active Alerts</div>
+    </div>
+  </div>
+
+  <!-- Quick Actions -->
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
+    <div class="action-grid">
+      <a href="map.html"           class="btn btn-primary">🗺️ National Map</a>
+      <a href="market-prices.html" class="btn btn-secondary">📊 Market Data</a>
+      <a href="knowledge-hub.html" class="btn btn-accent">📚 Knowledge Hub</a>
+      <a href="notifications.html" class="btn btn-outline">🔔 Alerts</a>
+      <a href="messages.html"      class="btn btn-outline">💬 Broadcast</a>
+      <a href="profile.html"       class="btn btn-outline">👤 Profile</a>
+    </div>
+  </div>
+
+   <!-- Post Alert -->
+  <div class="card mb-24">
+    <div class="card-header"><h3 class="card-title">Post New Alert</h3></div>
+    <div style="display:grid;gap:12px;">
+      <div class="form-group" style="margin:0">
+        <input id="alert-title" class="form-input" type="text" placeholder="Alert title">
+      </div>
+      <div class="form-group" style="margin:0">
+        <textarea id="alert-msg" class="form-textarea" placeholder="Alert message…" rows="3"></textarea>
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <select id="alert-type" class="form-select" style="flex:1">
+          <option value="weather">Weather</option>
+          <option value="disease">Disease</option>
+          <option value="market">Market</option>
+          <option value="security">Security</option>
+        </select>
+        <select id="alert-severity" class="form-select" style="flex:1">
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+        </select>
+      </div>
+      <button id="post-alert-btn" class="btn btn-danger">Post Alert</button>
+    </div>
+  </div>
+
+  <!-- Supplier Verification Requests -->
+  <div class="card mb-24">
+    <div class="card-header">
+      <h3 class="card-title">🏪 Supplier Verification Requests</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="pending-count" class="badge badge-warning" style="display:none;"></span>
+        <select id="verify-filter" class="form-select" style="width:auto;">
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+    </div>
+    <p class="text-sm text-gray" style="margin-bottom:16px;">
+      Suppliers submit verification requests from their portal. Approving a supplier marks all their products with a verified badge in the marketplace.
+    </p>
+    <div id="verify-list"><p class="text-gray text-sm">Loading…</p></div>
+  </div>
+
+  <!-- Users Table -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Registered Users</h3>
+      <span id="user-count" class="badge badge-info">—</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th>District</th><th>Joined</th></tr>
+        </thead>
+        <tbody id="users-table">
+          <tr><td colspan="5" class="text-gray">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><p id="loading-msg">Loading…</p></div>
+<div class="toast-container"></div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="js/core.js"></script>
+<script src="js/navbar.js"></script>
+<script>
+(async () => {
+  const { DB, requireAuth, loadProfile, getRole, showLoading, hideLoading,
+          showToast, fmtDate, initOfflineBanner } = FCZ;
+
+  initOfflineBanner();
+  showLoading('Loading dashboard…');
+
+  const ok = await requireAuth();
+  if (!ok) return;
+
+  await loadProfile();
+  if (getRole() !== 'administrator') {
+    window.location.replace(FCZ.dashboardFor(getRole()));
+    return;
+  }
+
+  hideLoading();
+  renderNavbar('administrator');
+
+  // ── Stats ────────────────────────────────────────────────────────────────
+  DB.collection('users').where('role','==','farmer').get()
+    .then(s => { document.getElementById('stat-farmers').textContent = s.size; });
+  DB.collection('users').where('role','==','extension_officer').get()
+    .then(s => { document.getElementById('stat-officers').textContent = s.size; });
+  DB.collection('livestock').get().then(s => {
+    document.getElementById('stat-livestock').textContent =
+      s.docs.reduce((n, d) => n + (d.data().count || 1), 0);
+  });
+  DB.collection('alerts').where('active','==',true).get()
+    .then(s => { document.getElementById('stat-alerts').textContent = s.size; });
+
+  // ── Users table ──────────────────────────────────────────────────────────
+  DB.collection('users').orderBy('createdAt','desc').limit(50).get()
+    .then(s => {
+      document.getElementById('user-count').textContent = s.size + ' users';
+      const tbody = document.getElementById('users-table');
+      if (s.empty) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-gray">No users yet.</td></tr>';
+        return;
+      }
+      const roleColors = {
+        farmer:            'badge-success',
+        extension_officer: 'badge-info',
+        administrator:     'badge-danger',
+        supplier:          'badge-warning'
+      };
+      tbody.innerHTML = s.docs.map(d => {
+        const u = d.data();
+        return `<tr>
+          <td>${u.name || '—'}</td>
+          <td>${u.email || '—'}</td>
+          <td><span class="badge ${roleColors[u.role] || 'badge-neutral'}">${u.role || '—'}</span></td>
+          <td>${u.district || '—'}</td>
+          <td>${fmtDate(u.createdAt)}</td>
+        </tr>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('users-table').innerHTML =
+        '<tr><td colspan="5" class="text-gray">Could not load users. Check Firestore rules.</td></tr>';
+    });
+
+  // ── Supplier verification requests ───────────────────────────────────────
+  async function loadVerificationRequests(statusFilter = 'pending') {
+    const list = document.getElementById('verify-list');
+    list.innerHTML = '<p class="text-gray text-sm">Loading…</p>';
+    try {
+      let query = DB.collection('verificationRequests').orderBy('createdAt', 'desc');
+      if (statusFilter !== 'all') query = query.where('status', '==', statusFilter);
+
+      const snap = await query.limit(50).get();
+
+      // Show pending count badge
+      const pendingSnap = await DB.collection('verificationRequests')
+        .where('status', '==', 'pending').get();
+      const pendingCount = pendingSnap.size;
+      const badge = document.getElementById('pending-count');
+      if (pendingCount > 0) {
+        badge.textContent = pendingCount + ' pending';
+        badge.style.display = 'inline-flex';
+      } else {
+        badge.style.display = 'none';
+      }
+
+      if (snap.empty) {
+        const labels = { pending: 'No pending requests', approved: 'No approved suppliers', rejected: 'No rejected requests', all: 'No requests yet' };
+        list.innerHTML = `<div class="empty-state"><div class="icon">🏪</div><p>${labels[statusFilter] || 'Nothing here'}</p></div>`;
+        return;
+      }
+
+      list.innerHTML = snap.docs.map(d => {
+        const r   = d.data();
+        const ini = (r.businessName || r.supplierName || 'S')[0].toUpperCase();
+        const statusPill = {
+          pending:  '<span class="status-pill pending">⏳ Pending</span>',
+          approved: '<span class="status-pill approved">✓ Approved</span>',
+          rejected: '<span class="status-pill rejected">✕ Rejected</span>'
+        }[r.status] || '';
+
+        const actionBtns = r.status === 'pending'
+          ? `<button class="btn btn-sm btn-primary" onclick="handleVerify('${d.id}','${r.supplierId}',true)">✓ Approve</button>
+             <button class="btn btn-sm btn-danger"  onclick="handleVerify('${d.id}','${r.supplierId}',false)">✕ Reject</button>`
+          : r.status === 'approved'
+            ? `<button class="btn btn-sm btn-outline" onclick="handleVerify('${d.id}','${r.supplierId}',false)">Revoke</button>`
+            : `<button class="btn btn-sm btn-outline" onclick="handleVerify('${d.id}','${r.supplierId}',true)">Re-approve</button>`;
+
+        return `<div class="verify-card">
+          <div class="verify-avatar">${ini}</div>
+          <div class="verify-info">
+            <div class="verify-name">${r.businessName || r.supplierName || 'Unknown Supplier'} ${statusPill}</div>
+            <div class="verify-meta">
+              📂 ${r.category || '—'}
+              ${r.location ? ' · 📍 ' + r.location : ''}
+              ${r.phone    ? ' · 📞 ' + r.phone    : ''}
+              · Submitted ${fmtDate(r.createdAt)}
+            </div>
+            ${r.note ? `<div class="verify-note">"${r.note}"</div>` : ''}
+            ${r.reviewedAt ? `<div style="font-size:.75rem;color:var(--text-3);">Reviewed ${fmtDate(r.reviewedAt)}</div>` : ''}
+            <div class="verify-actions">${actionBtns}</div>
+          </div>
+        </div>`;
+      }).join('');
+
+    } catch(e) {
+      list.innerHTML = '<p class="text-gray text-sm">Could not load requests: ' + e.message + '</p>';
+      console.error('loadVerificationRequests:', e);
+    }
+  }
+
+  // Approve or reject: update the request doc + the supplier's user doc
+  window.handleVerify = async (requestId, supplierId, approve) => {
+    const newStatus  = approve ? 'approved' : 'rejected';
+    const actionWord = approve ? 'Approving'  : 'Rejecting';
+    showToast(actionWord + '…', 'info', 1500);
+
+    try {
+      const batch = DB.batch();
+
+      // 1. Update the verificationRequest doc
+      batch.update(DB.collection('verificationRequests').doc(requestId), {
+        status:     newStatus,
+        reviewedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 2. Update the supplier's user doc — this is what the marketplace checks
+      batch.update(DB.collection('users').doc(supplierId), {
+        verified: approve
+      });
+
+      await batch.commit();
+
+      showToast(
+        approve ? '✓ Supplier approved — their products now show the verified badge' : 'Verification revoked',
+        approve ? 'success' : 'warning'
+      );
+
+      // Reload whichever filter is active
+      loadVerificationRequests(document.getElementById('verify-filter').value);
+    } catch(e) {
+      showToast('Failed: ' + e.message, 'error');
+    }
+  };
+
+  document.getElementById('verify-filter').addEventListener('change', e => {
+    loadVerificationRequests(e.target.value);
+  });
+
+  loadVerificationRequests('pending');
+
+  // ── Post alert ───────────────────────────────────────────────────────────
+  document.getElementById('post-alert-btn').addEventListener('click', async () => {
+    const title    = document.getElementById('alert-title').value.trim();
+    const message  = document.getElementById('alert-msg').value.trim();
+    const type     = document.getElementById('alert-type').value;
+    const severity = document.getElementById('alert-severity').value;
+    if (!title || !message) { showToast('Fill in title and message.', 'warning'); return; }
+
+    const btn = document.getElementById('post-alert-btn');
+    btn.textContent = 'Posting…';
+    btn.disabled    = true;
+    try {
+      await DB.collection('alerts').add({
+        title, message, type, severity, active: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('Alert posted!', 'success');
+        // Broadcast push notification to all subscribed users
+      try {
+        const token = await firebase.auth().currentUser.getIdToken();
+        const severityEmoji = { low:'ℹ️', medium:'⚠️', high:'🚨', critical:'🆘' }[severity] || '🔔';
+        const pushRes = await fetch(FCZ.API_URL + '/api/push/broadcast', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({
+            title: severityEmoji + ' ' + title,
+            body:  message,
+            url:   '/notifications.html',
+            tag:   'alert-' + type   // deduplicates same-type alerts on device
+          })
+        });
+        const pushData = await pushRes.json().catch(() => ({}));
+        const sentCount = pushData.sent || 0;
+        showToast(`Alert posted! Push sent to ${sentCount} device${sentCount !== 1 ? 's' : ''}.`, 'success', 5000);
+      } catch (e) {
+        showToast('Alert posted (push delivery failed)', 'warning');
+      }
+
+      document.getElementById('alert-title').value = '';
+      document.getElementById('alert-msg').value   = '';
+    } catch (e) {
+      showToast('Failed to post alert: ' + e.message, 'error');
+    } finally {
+      btn.textContent = 'Post Alert'; btn.disabled = false;
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
