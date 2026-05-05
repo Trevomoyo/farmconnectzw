@@ -176,29 +176,8 @@ io.on('connection', (socket) => {
    });
 
    socket.on('send_message', async (data) => {
-     // Persist to Firestore for history
-     if (db) {
-       try {
-         const messageData = {
-           senderId: data.senderId,
-           senderName: data.senderName || '',
-           recipientId: data.recipientId,
-           recipientName: data.recipientName || '',
-           participants: [data.senderId, data.recipientId],
-           text: data.text || '',
-           mediaType: data.mediaType || null,
-           mediaUrl: data.mediaUrl || null,
-           mediaName: data.mediaName || null,
-           seen: false,
-           createdAt: admin.firestore.FieldValue.serverTimestamp()
-         };
-         await db.collection('messages').add(messageData);
-       } catch (e) {
-         console.error('Failed to persist message:', e.message);
-       }
-     }
-
      // Broadcast to other participants only (exclude sender)
+     // Note: Client persists to Firestore directly - no double-write here
      socket.to(data.chatId).emit('receive_message', data);
 
      // Send push notification to recipient if they are offline
@@ -213,7 +192,7 @@ io.on('connection', (socket) => {
              const payload = JSON.stringify({
                title: `💬 ${data.senderName || 'New message'}`,
                body: preview,
-               url: origin + '/messages.html'
+               url: `${origin}/messages.html`
              });
              await webpush.sendNotification(userSnap.data().pushSubscription, payload);
            }
@@ -225,7 +204,7 @@ io.on('connection', (socket) => {
    });
 
   socket.on('typing', ({ chatId, userId, userName }) => {
-    socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
+    socket.to(chatId).emit('typing', { userId, userName });
   });
 
   socket.on('stop_typing', ({ chatId, userId }) => {
@@ -607,7 +586,7 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
     const payload = JSON.stringify({
       title: `💬 ${senderName || 'New message'}`,
       body:  preview ? preview.slice(0, 120) : 'You have a new message',
-      url:   origin + '/messages.html'
+      url:   `${origin}/messages.html`
     });
 
     try {

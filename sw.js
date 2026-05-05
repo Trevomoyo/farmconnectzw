@@ -40,7 +40,8 @@ self.addEventListener('fetch', event => {
     fetch(event.request)
       .then(response => {
         if (response.ok) {
-          caches.open(CACHE_NAME).then(c => c.put(event.request, response.clone()));
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
         }
         return response;
       })
@@ -84,8 +85,9 @@ self.addEventListener('notificationclick', event => {
           return client.focus();
         }
       }
-      // No existing window — open a new one
-      return self.clients.openWindow(targetUrl);
+      // No existing window — open a new one with absolute URL
+      const absoluteUrl = targetUrl.startsWith('http') ? targetUrl : new URL(targetUrl, self.location.origin).href;
+      return self.clients.openWindow(absoluteUrl);
     })
   );
 });

@@ -25,8 +25,12 @@ if (!firebase.apps.length) {
 const Auth = firebase.auth();
 const DB   = firebase.firestore();
 
-// Enable Firestore offline persistence (best-effort)
-DB.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+// Enable Firestore offline persistence (best-effort) - using new API if available
+if (DB.enableIndexedDbPersistence) {
+  DB.enableIndexedDbPersistence({ forceOwnership: true }).catch(() => {});
+} else {
+  DB.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+}
 
 // ── Auth state ────────────────────────────────────────────────────────────────
 let _currentUser = null;
@@ -65,6 +69,8 @@ async function loadProfile() {
       localStorage.setItem('fcz_role', _userProfile.role || 'farmer');
       // Auto-trigger push prompt once per session, 3s after page settles
       _maybeTriggerPush();
+      // Also init push notifications now that profile is loaded
+      initPushNotifications();
       return _userProfile;
     }
   } catch (e) { console.warn('loadProfile:', e); }
