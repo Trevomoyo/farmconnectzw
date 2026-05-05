@@ -535,17 +535,18 @@ const COMMISSION_RATE = 0.05;
   function loadOrders(statusFilter = 'all') {
     const list = document.getElementById('orders-list');
     list.innerHTML = '<p class="text-gray text-sm">Loading…</p>';
-    // Try with supplierId field; fall back to client-side filter
-    DB.collection('orders').where('supplierId', '==', user.uid).orderBy('createdAt', 'desc').get()
-      .catch(() =>
-        DB.collection('orders').get().then(snap => ({
-          docs: snap.docs.filter(d =>
-            (d.data().items || []).some(i => i.sellerId === user.uid || i.supplierId === user.uid)
-          )
-        }))
-      )
+    
+    // First, get all orders and filter client-side since we may have multiple sellers/suppliers
+    DB.collection('orders').get()
       .then(snap => {
-        let orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        let orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+          .filter(o => 
+            (o.buyerId === user.uid) || 
+            (o.sellerId === user.uid) || 
+            (o.supplierId === user.uid) ||
+            (o.items && o.items.some(i => i.sellerId === user.uid || i.supplierId === user.uid))
+          );
+        
         if (statusFilter !== 'all') orders = orders.filter(o => o.status === statusFilter);
         if (!orders.length) {
           list.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>No orders yet.</p></div>';

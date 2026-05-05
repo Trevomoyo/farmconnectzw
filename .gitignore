@@ -1,1 +1,3 @@
-Nothing should be ignored based on the provided file changes, as they only include source code and configuration files (`.js`, `.json` files).
+```html
+<!-- Do not ignore HTML files as they are source code -->
+```
