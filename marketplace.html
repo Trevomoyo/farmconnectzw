@@ -884,11 +884,17 @@ document.getElementById('pay-btn').onclick = async () => {
     });
     const data = await res.json();
     if (data.success) {
+      // Extract unique supplier/seller IDs from cart items
+      const supplierIds = [...new Set(cart.map(i => i.supplierId || i.sellerId).filter(Boolean))];
+      const sellerIds = [...new Set(cart.map(i => i.sellerId).filter(Boolean))];
+      
       await FCZ.DB.collection('orders').add({
         buyerId: user.uid, buyerName: user.displayName || user.email,
         items: cart, total, method, phone,
         status: method === 'cash' ? 'pending_collection' : 'payment_initiated',
         reference: data.reference || null,
+        supplierId: supplierIds.length === 1 ? supplierIds[0] : (supplierIds[0] || null),
+        sellerId: sellerIds.length === 1 ? sellerIds[0] : (sellerIds[0] || null),
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
       cart = []; saveCart(); updateBadge();
