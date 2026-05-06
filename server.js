@@ -69,7 +69,7 @@ const upload = multer({
 let pushReady = false;
 if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(
-    process.env.VAPID_EMAIL || 'mailto:admin@farmconnectzw.co.zw',
+    process.env.VAPID_EMAIL || 'mailto:support@farmconnectzw.co.zw',
     process.env.VAPID_PUBLIC_KEY,
     process.env.VAPID_PRIVATE_KEY
   );
@@ -96,7 +96,7 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
                     "ws:", 
                     "wss:" 
                    ],
-       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com","https://farmconnectzw.co.zw","https://farmconnectzw.web.app",
+       frameSrc:   ["'self'", "https://farmconnectzw.firebaseapp.com","farmconnectzw.co.zw","https://farmconnectzw.web.app",
                     "https://accounts.google.com"],
        workerSrc:  ["'self'", "blob:"],
        mediaSrc:   ["'self'", supabaseUrl ? `${supabaseUrl}/*` : ""]
@@ -106,8 +106,8 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
 
 const ALLOWED_ORIGINS = [
   'https://farmconnectzw.web.app',
+  'farmconnectzw.co.zw',
   'https://farmconnectzw.firebaseapp.com',
-  'https://farmconnectzw.co.zw',
   process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.onrender.com'
 ].filter(Boolean);
 
@@ -176,35 +176,36 @@ io.on('connection', (socket) => {
    });
 
    socket.on('send_message', async (data) => {
-     // Broadcast to other participants only (exclude sender)
-     // Note: Client persists to Firestore directly - no double-write here
+     // Client (messages.html) already wrote this to Firestore.
+     // Server only needs to: (a) relay to recipient via socket,
+     // (b) send a push notification if recipient is offline.
+
+     // (a) Relay to recipient's room (excludes sender)
      socket.to(data.chatId).emit('receive_message', data);
 
-     // Send push notification to recipient if they are offline
-     if (pushReady && db && data.recipientId) {
-       // Skip push if recipient is currently online
-       if (!onlineUsers.has(data.recipientId)) {
-         try {
-           const userSnap = await db.collection('users').doc(data.recipientId).get();
-           if (userSnap.exists && userSnap.data().pushSubscription) {
-             const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
-             const preview = data.text ? data.text.slice(0, 100) : (data.mediaType ? '📎 Media' : 'New message');
-             const payload = JSON.stringify({
-               title: `💬 ${data.senderName || 'New message'}`,
-               body: preview,
-               url: `${origin}/messages.html`
-             });
-             await webpush.sendNotification(userSnap.data().pushSubscription, payload);
-           }
-         } catch (e) {
-           console.error('Push notification error:', e.message);
+     // (b) Push to recipient only if they are NOT currently connected via socket
+     if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
+       try {
+         const userSnap = await db.collection('users').doc(data.recipientId).get();
+         if (userSnap.exists && userSnap.data().pushSubscription) {
+           const preview = data.text
+             ? data.text.slice(0, 100)
+             : data.mediaType ? '📎 ' + data.mediaType : 'New message';
+           await _sendPush(data.recipientId, userSnap.data().pushSubscription, {
+             title: `💬 ${data.senderName || 'New message'}`,
+             body:  preview,
+             url:   '/messages.html',
+             tag:   'fcz-message'
+           });
          }
+       } catch (e) {
+         console.error('Socket push error:', e.message);
        }
      }
    });
 
   socket.on('typing', ({ chatId, userId, userName }) => {
-    socket.to(chatId).emit('typing', { userId, userName });
+    socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
 
   socket.on('stop_typing', ({ chatId, userId }) => {
@@ -479,6 +480,36 @@ app.post('/api/upload', verifyToken, upload.single('file'), async (req, res) => 
   }
 });
 
+// ── Push helper — send to one user, auto-remove stale subscription ────────────
+const APP_ORIGIN = process.env.RENDER_EXTERNAL_URL
+  ? process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '')
+  : 'https://farmconnectzw.co.zw';
+
+async function _sendPush(userId, subscription, payload) {
+  if (!pushReady) return false;
+  try {
+    await webpush.sendNotification(
+      subscription,
+      JSON.stringify({
+        ...payload,
+        // Resolve relative URL to absolute so SW openWindow works
+        url: payload.url?.startsWith('http')
+          ? payload.url
+          : APP_ORIGIN + (payload.url || '/notifications.html')
+      })
+    );
+    return true;
+  } catch (e) {
+    // 410 Gone or 404 = subscription expired — delete it so we stop trying
+    if ((e.statusCode === 410 || e.statusCode === 404) && db && userId) {
+      db.collection('users').doc(userId)
+        .update({ pushSubscription: admin.firestore.FieldValue.delete() })
+        .catch(() => {});
+    }
+    return false;
+  }
+}
+
 // Notifications
 app.get('/api/push/vapid-key', (req, res) => {
   if (!pushReady) return res.status(503).json({ error: 'Push not configured' });
@@ -490,133 +521,91 @@ app.post('/api/push/subscribe', verifyToken, async (req, res) => {
   try {
     await db.collection('users').doc(req.user.uid).update({
       pushSubscription: req.body.subscription,
-      pushUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+      pushUpdatedAt:    admin.firestore.FieldValue.serverTimestamp()
     });
     res.json({ success: true });
-  } catch (e) { 
-    res.status(500).json({ error: e.message }); 
-  }
-});
-
-app.post('/api/push/broadcast', verifyToken, requireAdmin, async (req, res) => {
-  if (!pushReady || !db) return res.status(503).json({ error: 'Push not configured' });
-  const { title, body, url, district } = req.body;
-  if (!title) return res.status(400).json({ error: 'title required' });
-
-  try {
-    let query = db.collection('users');
-    // Optionally target a specific district
-    if (district) query = query.where('district', '==', district);
-    const usersSnap = await query.get();
-
-    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
-    const fullUrl = (url || '/notifications.html').startsWith('http') ? url : origin + (url || '/notifications.html');
-    const payload = JSON.stringify({ title, body: body || '', url: fullUrl });
-
-    let sent = 0;
-    const staleIds = [];
-
-    await Promise.allSettled(
-      usersSnap.docs
-        .filter(d => d.data().pushSubscription)
-        .map(async d => {
-          try {
-            await webpush.sendNotification(d.data().pushSubscription, payload);
-            sent++;
-          } catch (e) {
-            // 410 Gone / 404 = subscription expired — clean it up
-            if (e.statusCode === 410 || e.statusCode === 404) {
-              staleIds.push(d.id);
-            }
-          }
-        })
-    );
-
-    // Remove stale subscriptions
-    if (staleIds.length) {
-      const batch = db.batch();
-      staleIds.forEach(id => batch.update(db.collection('users').doc(id), { pushSubscription: admin.firestore.FieldValue.delete() }));
-      await batch.commit();
-    }
-
-    res.json({ success: true, sent, staleRemoved: staleIds.length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Push a single alert notification to a specific user
-app.post('/api/push/notify-user', verifyToken, async (req, res) => {
-  if (!pushReady || !db) return res.json({ success: false });
-  const { recipientId, title, body, url } = req.body;
-  if (!recipientId || !title) return res.status(400).json({ error: 'recipientId and title required' });
-
+// SW calls this when browser auto-renews a push subscription
+app.post('/api/push/resubscribe', async (req, res) => {
+  if (!db) return res.json({ success: false });
+  const { oldEndpoint, subscription } = req.body;
+  if (!subscription || !oldEndpoint) return res.json({ success: false });
   try {
-    const snap = await db.collection('users').doc(recipientId).get();
-    if (!snap.exists || !snap.data().pushSubscription) return res.json({ success: false, reason: 'no_subscription' });
-
-    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
-    const fullUrl = (url || '/notifications.html').startsWith('http') ? url : origin + (url || '/notifications.html');
-    const payload = JSON.stringify({ title, body: body || '', url: fullUrl });
-
-    try {
-      await webpush.sendNotification(snap.data().pushSubscription, payload);
-      res.json({ success: true });
-    } catch (e) {
-      if (e.statusCode === 410 || e.statusCode === 404) {
-        await db.collection('users').doc(recipientId).update({ pushSubscription: admin.firestore.FieldValue.delete() });
-      }
-      res.json({ success: false, reason: e.message });
-    }
+    // Find user by their old endpoint and swap in the new subscription
+    const snap = await db.collection('users')
+      .where('pushSubscription.endpoint', '==', oldEndpoint)
+      .limit(1).get();
+    if (snap.empty) return res.json({ success: false, reason: 'not_found' });
+    await snap.docs[0].ref.update({
+      pushSubscription: subscription,
+      pushUpdatedAt:    admin.firestore.FieldValue.serverTimestamp()
+    });
+    res.json({ success: true });
   } catch (e) {
     res.json({ success: false, reason: e.message });
   }
 });
 
+// Broadcast alert to all users (or specific district) — admin only
+app.post('/api/push/broadcast', verifyToken, requireAdmin, async (req, res) => {
+  if (!pushReady || !db) return res.status(503).json({ error: 'Push not configured' });
+  const { title, body, url, tag, district } = req.body;
+  if (!title) return res.status(400).json({ error: 'title is required' });
+
+  try {
+    let query = db.collection('users');
+    if (district) query = query.where('district', '==', district);
+    const usersSnap = await query.get();
+
+    const payload = {
+      title,
+      body: body || '',
+      url:  url  || '/notifications.html',
+      tag:  tag  || 'fcz-alert'
+    };
+
+    let sent = 0;
+    await Promise.allSettled(
+      usersSnap.docs
+        .filter(d => d.data().pushSubscription)
+        .map(async d => {
+          const ok = await _sendPush(d.id, d.data().pushSubscription, payload);
+          if (ok) sent++;
+        })
+    );
+
+    res.json({ success: true, sent });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Send push to one specific user — used by /api/notify/message
 app.post('/api/notify/message', verifyToken, async (req, res) => {
   if (!pushReady || !db) return res.json({ success: false });
   const { recipientId, senderName, preview } = req.body;
-  if (!recipientId) return res.json({ success: false });
+  if (!recipientId) return res.status(400).json({ error: 'recipientId required' });
 
   try {
     const snap = await db.collection('users').doc(recipientId).get();
-    if (!snap.exists || !snap.data().pushSubscription) return res.json({ success: false });
-
-    const origin  = process.env.RENDER_EXTERNAL_URL || 'https://farmconnectzw.web.app';
-    const payload = JSON.stringify({
+    if (!snap.exists || !snap.data().pushSubscription) {
+      return res.json({ success: false, reason: 'no_subscription' });
+    }
+    const ok = await _sendPush(recipientId, snap.data().pushSubscription, {
       title: `💬 ${senderName || 'New message'}`,
       body:  preview ? preview.slice(0, 120) : 'You have a new message',
-      url:   `${origin}/messages.html`
+      url:   '/messages.html',
+      tag:   'fcz-message'
     });
-
-    try {
-      await webpush.sendNotification(snap.data().pushSubscription, payload);
-      res.json({ success: true });
-    } catch (e) {
-      if (e.statusCode === 410 || e.statusCode === 404) {
-        await db.collection('users').doc(recipientId).update({ pushSubscription: admin.firestore.FieldValue.delete() });
-      }
-      res.json({ success: false });
-    }
+    res.json({ success: ok });
   } catch (e) {
-    res.json({ success: false });
+    res.json({ success: false, reason: e.message });
   }
 });
-// SW calls this when the browser auto-renews a push subscription
-app.post('/api/push/resubscribe', async (req, res) => {
-  if (!pushReady || !db) return res.json({ success: false });
-  // No auth token available from SW context — we trust the subscription endpoint itself
-  const { subscription, userId } = req.body;
-  if (!subscription || !userId) return res.json({ success: false });
-  try {
-    await db.collection('users').doc(userId).update({
-      pushSubscription: subscription,
-      pushUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-    res.json({ success: true });
-  } catch (e) { res.json({ success: false }); }
-});
-
 //Payments
 app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   const { phone, method, amount, items } = req.body;
