@@ -194,12 +194,6 @@ io.on('connection', (socket) => {
        }
      }
    });
-       } catch (e) {
-         console.error('Socket push error:', e.message);
-       }
-     }
-   });
-
   socket.on('typing', ({ chatId, userId, userName }) => {
     socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
