@@ -176,25 +176,32 @@ io.on('connection', (socket) => {
    });
 
   socket.on('send_message', async (data) => {
-     if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
-       try {
-         const userSnap = await db.collection('users').doc(data.recipientId).get();
-         if (userSnap.exists && userSnap.data().pushSubscription) {
-           const preview = data.text
-             ? data.text.slice(0, 100)
-             : data.mediaType ? '📎 ' + data.mediaType : 'New message';
-           await _sendPush(data.recipientId, userSnap.data().pushSubscription, {
-             title: `💬 ${data.senderName || 'New message'}`,
-             body:  preview,
-             url:   '/messages.html',
-             tag:   'fcz-message'
-           });
-           
-         }catch (e) {
-         console.error('Socket push error:', e.message);
-         }
+    
+  if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
+    try {
+      const userSnap = await db.collection('users').doc(data.recipientId).get();
+
+      if (userSnap.exists) {
+        const userData = userSnap.data();
+
+        if (userData.pushSubscription) {
+          const preview = data.text 
+            ? data.text.slice(0, 100) 
+            : data.mediaType ? '📎 ' + data.mediaType : 'New message';
+
+          await _sendPush(data.recipientId, userData.pushSubscription, {
+            title: `💬 ${data.senderName || 'New message'}`,
+            body: preview,
+            url: '/messages.html',
+            tag: 'fcz-message'
+          });
+        }
+      }
+    } catch (e) { 
+      console.error('Socket push error:', e.message);
+    }
   } 
-});
+}); 
   socket.on('typing', ({ chatId, userId, userName }) => {
     socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
