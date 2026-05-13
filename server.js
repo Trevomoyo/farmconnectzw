@@ -18,7 +18,10 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 
 const app = express();
+
+// Fix for rate limiter behind proxy (Render.com)
 app.set('trust proxy', 1);
+
 const PORT = process.env.PORT || 10000;
 
 // Static files
@@ -106,6 +109,8 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
  }));
 
 const ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:10000',
   'https://farmconnectzw.web.app',
   'https://farmconnectzw.co.zw',
   'https://farmconnectzw.firebaseapp.com',
@@ -923,35 +928,53 @@ app.post('/api/chat', verifyToken, chatbotLimiter, async (req, res) => {
   }
 
   try {
-    // Build conversation history for context (max last 10 turns)
-    const recentHistory = history.slice(-10);
-    const contents = [
-      ...recentHistory.map(turn => ({
-        role: turn.role,
-        parts: [{ text: turn.text }]
-      })),
-      {
-        role: 'user',
-        parts: [{ text: message.trim() }]
+    // Build conversation with system prompt prepended to current message
+    let fullMessage = message.trim();
+    
+    // If this is the first message (no history), include the system prompt
+    if (history.length === 0) {
+      fullMessage = `${AGRI_SYSTEM_PROMPT}\n\nUser: ${message.trim()}\n\nAssistant:`;
+    }
+    
+    const contents = [];
+    
+    // Add conversation history (excluding the system prompt from previous messages)
+    for (let i = 0; i < history.length; i += 2) {
+      if (history[i] && history[i].role === 'user') {
+        contents.push({
+          role: 'user',
+          parts: [{ text: history[i].text }]
+        });
+        if (history[i + 1] && history[i + 1].role === 'model') {
+          contents.push({
+            role: 'model',
+            parts: [{ text: history[i + 1].text }]
+          });
+        }
       }
-    ];
+    }
+    
+    // Add current message
+    contents.push({
+      role: 'user',
+      parts: [{ text: fullMessage }]
+    });
 
-    const geminiRes = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
+    const geminiRes = await fetch(GEMINI_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: AGRI_SYSTEM_PROMPT }] },
-        contents,
+        contents: contents,
         generationConfig: {
-          temperature:     0.7,
-          topP:            0.9,
+          temperature: 0.7,
+          topP: 0.9,
           maxOutputTokens: 512,
-          stopSequences:   []
+          stopSequences: []
         },
         safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT',       threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH',      threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT',threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
         ]
       })
     });
@@ -963,8 +986,8 @@ app.post('/api/chat', verifyToken, chatbotLimiter, async (req, res) => {
     }
 
     const geminiData = await geminiRes.json();
-    const candidate  = geminiData.candidates?.[0];
-    const reply      = candidate?.content?.parts?.[0]?.text;
+    const candidate = geminiData.candidates?.[0];
+    const reply = candidate?.content?.parts?.[0]?.text;
 
     if (!reply) {
       return res.status(502).json({ error: 'No response from AI' });
