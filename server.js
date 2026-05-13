@@ -175,15 +175,7 @@ io.on('connection', (socket) => {
      socket.leave(chatId);
    });
 
-   socket.on('send_message', async (data) => {
-     // Client (messages.html) already wrote this to Firestore.
-     // Server only needs to: (a) relay to recipient via socket,
-     // (b) send a push notification if recipient is offline.
-
-     // (a) Relay to recipient's room (excludes sender)
-     socket.to(data.chatId).emit('receive_message', data);
-
-     // (b) Push to recipient only if they are NOT currently connected via socket
+  socket.on('send_message', async (data) => {
      if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
        try {
          const userSnap = await db.collection('users').doc(data.recipientId).get();
@@ -198,6 +190,11 @@ io.on('connection', (socket) => {
              tag:   'fcz-message'
            });
          }
+       } catch (e) {
+         console.error('Socket push error:', e.message);
+       }
+     }
+   });
        } catch (e) {
          console.error('Socket push error:', e.message);
        }
