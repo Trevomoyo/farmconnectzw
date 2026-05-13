@@ -189,13 +189,11 @@ io.on('connection', (socket) => {
              url:   '/messages.html',
              tag:   'fcz-message'
            });
-         }
        } catch (e) {
          console.error('Socket push error:', e.message);
        }
      }
    });
-}
        } catch (e) {
          console.error('Socket push error:', e.message);
        }
