@@ -152,38 +152,53 @@ const io = new Server(server, {
   }
 });
 
+// Map of userId -> Set of socket.id (supports multiple devices per user)
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
+  socket.on('join', ({ userId }) => {
+    if (!userId) return;
 
-   socket.on('join', ({ userId }) => {
-     socket.userId = userId;
-     onlineUsers.set(userId, socket.id);
+    // Store association between this socket and the userId
+    socket.userId = userId;
 
-     // Send current online list to the newly joined user
-     socket.emit('initial_online', Array.from(onlineUsers.keys()));
+    // Add this socket to the Set for this userId
+    if (!onlineUsers.has(userId)) {
+      onlineUsers.set(userId, new Set());
+    }
+    const sockets = onlineUsers.get(userId);
+    const wasOffline = sockets.size === 0;
+    sockets.add(socket.id);
 
-     // Notify others that this user is online
-     socket.broadcast.emit('user_online', userId);
-   });
+    // Send the current online user list (unique userIds) to this socket
+    const onlineUserIds = Array.from(onlineUsers.keys());
+    socket.emit('initial_online', onlineUserIds);
 
-   socket.on('join_chat', ({ chatId }) => {
-     socket.join(chatId);
-   });
+    // If this is the first device for this user, notify others that the user is online
+    if (wasOffline) {
+      socket.broadcast.emit('user_online', userId);
+    }
+  });
 
-   socket.on('leave_chat', ({ chatId }) => {
-     socket.leave(chatId);
-   });
+  socket.on('join_chat', ({ chatId }) => {
+    socket.join(chatId);
+  });
+
+  socket.on('leave_chat', ({ chatId }) => {
+    socket.leave(chatId);
+  });
 
   socket.on('send_message', async (data) => {
-    // Relay message to recipient in real-time (avoids Firestore onSnapshot delay)
-    const recipientSocketId = onlineUsers.get(data.recipientId);
-    if (recipientSocketId) {
-      io.to(recipientSocketId).emit('receive_message', data);
+    // Send to all sockets of the recipient (multi-device support)
+    const recipientSockets = onlineUsers.get(data.recipientId);
+    if (recipientSockets && recipientSockets.size > 0) {
+      for (const socketId of recipientSockets) {
+        io.to(socketId).emit('receive_message', data);
+      }
     }
 
-    // Push notification if recipient is offline
-    if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
+    // Push notification if recipient is offline (no active sockets)
+    if (pushReady && db && data.recipientId && (!recipientSockets || recipientSockets.size === 0)) {
       try {
         const userSnap = await db.collection('users').doc(data.recipientId).get();
         if (userSnap.exists) {
@@ -203,8 +218,9 @@ io.on('connection', (socket) => {
       } catch (e) { 
         console.error('Socket push error:', e.message);
       }
-    } 
-  }); 
+    }
+  });
+
   socket.on('typing', ({ chatId, userId, userName }) => {
     socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
@@ -215,27 +231,27 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', async () => {
     const userId = socket.userId;
+    if (!userId) return;
 
-    if (userId) {
-      onlineUsers.delete(userId);
+    const sockets = onlineUsers.get(userId);
+    if (sockets) {
+      sockets.delete(socket.id);
+      // If no more sockets for this user, remove them from the map and broadcast offline
+      if (sockets.size === 0) {
+        onlineUsers.delete(userId);
+        const lastSeen = Date.now();
+        socket.broadcast.emit('user_offline', { userId, lastSeen });
 
-      const lastSeen = Date.now();
-
-      socket.broadcast.emit('user_offline', {
-        userId,
-        lastSeen
-      });
-
-      if (db) {
-        try {
-          await db.collection('users').doc(userId).update({
-            lastSeen: admin.firestore.FieldValue.serverTimestamp()
-          });
-        } catch (e) {}
+        if (db) {
+          try {
+            await db.collection('users').doc(userId).update({
+              lastSeen: admin.firestore.FieldValue.serverTimestamp()
+            });
+          } catch (e) {}
+        }
       }
     }
   });
-
 });
 
 // Core API
