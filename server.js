@@ -18,6 +18,7 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 10000;
 
 // Static files
@@ -876,7 +877,7 @@ app.post('/api/cron/prices', verifyToken, requireAdmin, async (req, res) => {
 
 // ── Gemini Chatbot Endpoint ────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
 
 // Rate limiter specifically for chatbot — 30 requests per minute per IP
 const chatbotLimiter = rateLimit({
