@@ -195,6 +195,7 @@ io.on('connection', (socket) => {
        }
      }
    });
+}
        } catch (e) {
          console.error('Socket push error:', e.message);
        }
