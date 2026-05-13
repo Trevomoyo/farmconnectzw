@@ -877,7 +877,7 @@ app.post('/api/cron/prices', verifyToken, requireAdmin, async (req, res) => {
 
 // ── Gemini Chatbot Endpoint ────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
 
 // Rate limiter specifically for chatbot — 30 requests per minute per IP
 const chatbotLimiter = rateLimit({
