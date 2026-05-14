@@ -2,8 +2,8 @@ name: Daily Market Prices
 
 on:
   schedule:
-    - cron: '0 4 * * *'  # 4:00 AM UTC = 6:00 AM Zimbabwe time
-  workflow_dispatch:       # allows manual trigger from GitHub Actions tab
+    - cron: '0 4 * * *'
+  workflow_dispatch:
 
 jobs:
   trigger-cron:
@@ -11,7 +11,7 @@ jobs:
     steps:
       - name: Trigger market price refresh
         run: |
-          curl -X POST "${{ secrets.RENDER_URL }}/api/cron/prices" \
+          curl -X POST "https://farmconnectzw.onrender.com/api/cron/prices" \
                -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
                -f \
                --retry 3 \
