@@ -18,10 +18,6 @@ const { createClient } = require('@supabase/supabase-js');
 const multer = require('multer');
 
 const app = express();
-
-// Fix for rate limiter behind proxy (Render.com)
-app.set('trust proxy', 1);
-
 const PORT = process.env.PORT || 10000;
 
 // Static files
@@ -109,8 +105,6 @@ if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
  }));
 
 const ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:10000',
   'https://farmconnectzw.web.app',
   'https://farmconnectzw.co.zw',
   'https://farmconnectzw.firebaseapp.com',
@@ -158,53 +152,38 @@ const io = new Server(server, {
   }
 });
 
-// Map of userId -> Set of socket.id (supports multiple devices per user)
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
-  socket.on('join', ({ userId }) => {
-    if (!userId) return;
 
-    // Store association between this socket and the userId
-    socket.userId = userId;
+   socket.on('join', ({ userId }) => {
+     socket.userId = userId;
+     onlineUsers.set(userId, socket.id);
 
-    // Add this socket to the Set for this userId
-    if (!onlineUsers.has(userId)) {
-      onlineUsers.set(userId, new Set());
-    }
-    const sockets = onlineUsers.get(userId);
-    const wasOffline = sockets.size === 0;
-    sockets.add(socket.id);
+     // Send current online list to the newly joined user
+     socket.emit('initial_online', Array.from(onlineUsers.keys()));
 
-    // Send the current online user list (unique userIds) to this socket
-    const onlineUserIds = Array.from(onlineUsers.keys());
-    socket.emit('initial_online', onlineUserIds);
+     // Notify others that this user is online
+     socket.broadcast.emit('user_online', userId);
+   });
 
-    // If this is the first device for this user, notify others that the user is online
-    if (wasOffline) {
-      socket.broadcast.emit('user_online', userId);
-    }
-  });
+   socket.on('join_chat', ({ chatId }) => {
+     socket.join(chatId);
+   });
 
-  socket.on('join_chat', ({ chatId }) => {
-    socket.join(chatId);
-  });
-
-  socket.on('leave_chat', ({ chatId }) => {
-    socket.leave(chatId);
-  });
+   socket.on('leave_chat', ({ chatId }) => {
+     socket.leave(chatId);
+   });
 
   socket.on('send_message', async (data) => {
-    // Send to all sockets of the recipient (multi-device support)
-    const recipientSockets = onlineUsers.get(data.recipientId);
-    if (recipientSockets && recipientSockets.size > 0) {
-      for (const socketId of recipientSockets) {
-        io.to(socketId).emit('receive_message', data);
-      }
+    // Relay message to recipient in real-time (avoids Firestore onSnapshot delay)
+    const recipientSocketId = onlineUsers.get(data.recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('receive_message', data);
     }
 
-    // Push notification if recipient is offline (no active sockets)
-    if (pushReady && db && data.recipientId && (!recipientSockets || recipientSockets.size === 0)) {
+    // Push notification if recipient is offline
+    if (pushReady && db && data.recipientId && !onlineUsers.has(data.recipientId)) {
       try {
         const userSnap = await db.collection('users').doc(data.recipientId).get();
         if (userSnap.exists) {
@@ -224,9 +203,8 @@ io.on('connection', (socket) => {
       } catch (e) { 
         console.error('Socket push error:', e.message);
       }
-    }
-  });
-
+    } 
+  }); 
   socket.on('typing', ({ chatId, userId, userName }) => {
     socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
@@ -237,27 +215,27 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', async () => {
     const userId = socket.userId;
-    if (!userId) return;
 
-    const sockets = onlineUsers.get(userId);
-    if (sockets) {
-      sockets.delete(socket.id);
-      // If no more sockets for this user, remove them from the map and broadcast offline
-      if (sockets.size === 0) {
-        onlineUsers.delete(userId);
-        const lastSeen = Date.now();
-        socket.broadcast.emit('user_offline', { userId, lastSeen });
+    if (userId) {
+      onlineUsers.delete(userId);
 
-        if (db) {
-          try {
-            await db.collection('users').doc(userId).update({
-              lastSeen: admin.firestore.FieldValue.serverTimestamp()
-            });
-          } catch (e) {}
-        }
+      const lastSeen = Date.now();
+
+      socket.broadcast.emit('user_offline', {
+        userId,
+        lastSeen
+      });
+
+      if (db) {
+        try {
+          await db.collection('users').doc(userId).update({
+            lastSeen: admin.firestore.FieldValue.serverTimestamp()
+          });
+        } catch (e) {}
       }
     }
   });
+
 });
 
 // Core API
@@ -928,66 +906,35 @@ app.post('/api/chat', verifyToken, chatbotLimiter, async (req, res) => {
   }
 
   try {
-    // Build conversation with system prompt prepended to current message
-    let fullMessage = message.trim();
-    
-    // If this is the first message (no history), include the system prompt
-    if (history.length === 0) {
-      fullMessage = `${AGRI_SYSTEM_PROMPT}\n\nUser: ${message.trim()}\n\nAssistant:`;
-    }
-    
-    const contents = [];
-    
-    // Add conversation history (excluding the system prompt from previous messages)
-    for (let i = 0; i < history.length; i += 2) {
-      if (history[i] && history[i].role === 'user') {
-        contents.push({
-          role: 'user',
-          parts: [{ text: history[i].text }]
-        });
-        if (history[i + 1] && history[i + 1].role === 'model') {
-          contents.push({
-            role: 'model',
-            parts: [{ text: history[i + 1].text }]
-          });
-        }
-      }
-    }
-    
-    // Add current message
-    contents.push({
-      role: 'user',
-      parts: [{ text: fullMessage }]
-    });
+    // Prepend system prompt to the user's message
+    const prompt = `${AGRI_SYSTEM_PROMPT}\n\nUser: ${message.trim()}\n\nAssistant:`;
 
-    const geminiRes = await fetch(GEMINI_URL, {
+    const requestBody = {
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt
+            }
+          ]
+        }
+      ]
+    };
+
+    const geminiRes = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: contents,
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 512,
-          stopSequences: []
-        },
-        safetySettings: [
-          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
-        ]
-      })
+      body: JSON.stringify(requestBody)
     });
 
+    const data = await geminiRes.json();
+
     if (!geminiRes.ok) {
-      const errText = await geminiRes.text().catch(() => '');
-      console.error('Gemini API error:', geminiRes.status, errText);
-      return res.status(502).json({ error: 'AI service temporarily unavailable' });
+      console.error('Gemini API error:', geminiRes.status, data);
+      return res.status(502).json({ error: data.error?.message || 'AI service temporarily unavailable' });
     }
 
-    const geminiData = await geminiRes.json();
-    const candidate = geminiData.candidates?.[0];
-    const reply = candidate?.content?.parts?.[0]?.text;
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (!reply) {
       return res.status(502).json({ error: 'No response from AI' });
