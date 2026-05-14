@@ -143,6 +143,7 @@ async function requireAdmin(req, res, next) {
     res.status(500).json({ error: e.message }); 
   }
 }
+
 // Socket.io
 const server = http.createServer(app); // Pass app so HTTP routes work immediately
 const io = new Server(server, {
@@ -205,6 +206,7 @@ io.on('connection', (socket) => {
       }
     } 
   }); 
+
   socket.on('typing', ({ chatId, userId, userName }) => {
     socket.to(chatId).emit('typing', { userId, userName: userName || 'User' });
   });
@@ -607,7 +609,8 @@ app.post('/api/notify/message', verifyToken, async (req, res) => {
     res.json({ success: false, reason: e.message });
   }
 });
-//Payments
+
+// Payments
 app.post('/api/payment/initiate', verifyToken, async (req, res) => {
   const { phone, method, amount, items } = req.body;
   if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
@@ -635,23 +638,7 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
     const resulturl  = baseUrl + '/api/payment/callback';
     const authemail  = req.user.email || '';
 
-    // ── Paynow Hash ────────────────────────────────────────────────────────
-    // Source: https://forums.paynow.co.zw/t/invalid-hash-when-initiating-a-remotetransaction/1295
-    // Harvey's confirmed working example (post #14) and Lucia's field order (post #11).
-    //
-    // Algorithm: SHA512( concatenated_values + integrationKey ), uppercase hex.
-    // NOT MD5. NOT URL-encoded values. Raw strings only.
-    //
-    // Web field order:
-    //   id, reference, amount, additionalinfo, returnurl, resulturl, status, authemail
-    //
-    // Mobile field order (Harvey post #14 confirmed working):
-    //   id, reference, amount, additionalinfo, returnurl, resulturl, status, method, phone, authemail
-    //
-    // Hash appended LAST to the POST body, not included in hash input.
-
     function paynowHash(values, integrationKey) {
-      // values = array of raw string values in exact field order
       const str = values.join('') + integrationKey;
       return crypto.createHash('sha512').update(str, 'utf8').digest('hex').toUpperCase();
     }
@@ -659,7 +646,6 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
     let paynowUrl, fields, hashValues;
 
     if (!isMobile) {
-      // Web / redirect transaction
       fields = {
         id:             String(PAYNOW_ID),
         reference,
@@ -675,10 +661,7 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
       paynowUrl      = 'https://www.paynow.co.zw/interface/initiatetransaction';
 
     } else {
-      // Mobile money — normalise phone to 263XXXXXXXXX
       const normPhone = ('263' + phone.replace(/^\+?2630?|^0/, '').replace(/\D/g, '')).slice(0, 12);
-      // Confirmed field order from forums post #14:
-      // id, reference, amount, additionalinfo, returnurl, resulturl, status, method, phone, authemail
       fields = {
         id:             String(PAYNOW_ID),
         reference,
@@ -707,7 +690,6 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
     const rawText = await pnRes.text();
     console.log('Paynow response:', rawText);
 
-    // Parse URL-encoded response
     const parsed = {};
     rawText.split('&').forEach(pair => {
       const eq = pair.indexOf('=');
@@ -735,49 +717,59 @@ app.post('/api/payment/callback', async (req, res) => {
       if (!snap.empty) await snap.docs[0].ref.update({ status: (status||'').toLowerCase() === 'paid' ? 'paid' : 'payment_failed', paynowReference: paynowreference || null });
     } catch(e) { console.error('Callback error:', e.message); }
   }
-   res.send('OK');
- });
+  res.send('OK');
+});
 
-// ── Daily Market Prices Cron Job (runs at 6:00 AM Zimbabwe time = 4:00 AM UTC) ──
-// Zimbabwe is UTC+2. We simulate by checking every hour and running once per day.
-// Uses a simple lock stored in memory to prevent double-runs.
+// ── Daily Market Prices Cron Job ──────────────────────────────────────────────
+// IMPORTANT: On Render free tier, setInterval dies when the instance spins down.
+// Fix: Use Render's native Cron Job service to POST to /api/cron/prices instead.
+// Render dashboard → your service → Cron Jobs tab → add:
+//   Schedule : 0 4 * * *   (4:00 AM UTC = 6:00 AM Zimbabwe time)
+//   Command  : curl -X POST https://YOUR-SERVICE.onrender.com/api/cron/prices \
+//                   -H "X-Cron-Secret: YOUR_SECRET"
+// Add CRON_SECRET to your Render environment variables.
+
 let _lastPriceCronDate = '';
+let _lastCronRunAt     = null;
+let _lastCronStatus    = 'never_run';
 
+// Core cron logic — no hour-check here so manual/external triggers always work
 async function runDailyPriceCron() {
   if (!db) return;
-  const nowZW = new Date(Date.now() + 2 * 60 * 60 * 1000); // UTC+2
-  const todayStr = nowZW.toISOString().split('T')[0];
-  const hourZW   = nowZW.getUTCHours(); // hour in ZW local time
 
-  // Only run between 06:00–07:00 ZW, once per day
-  if (hourZW !== 6 || _lastPriceCronDate === todayStr) return;
+  const nowZW    = new Date(Date.now() + 2 * 60 * 60 * 1000);
+  const todayStr = nowZW.toISOString().split('T')[0];
+
+  // Prevent double-runs on the same calendar day
+  if (_lastPriceCronDate === todayStr) return;
   _lastPriceCronDate = todayStr;
+  _lastCronStatus    = 'running';
 
   console.log(`[Cron] Running daily market price refresh for ${todayStr}`);
 
-  // Commodity list with realistic Zimbabwe price ranges (ZiG)
   const commodities = [
-    { commodity: 'Maize',       unit: 'per 50kg bag', district: 'Harare',   base: 420,  volatility: 30  },
-    { commodity: 'Maize',       unit: 'per 50kg bag', district: 'Bulawayo', base: 430,  volatility: 30  },
-    { commodity: 'Maize',       unit: 'per 50kg bag', district: 'Mutare',   base: 415,  volatility: 25  },
-    { commodity: 'Wheat',       unit: 'per ton',      district: 'Harare',   base: 6800, volatility: 200 },
-    { commodity: 'Soya Beans',  unit: 'per ton',      district: 'Harare',   base: 9200, volatility: 300 },
-    { commodity: 'Groundnuts',  unit: 'per kg',       district: 'Gweru',    base: 5.2,  volatility: 0.4 },
-    { commodity: 'Sunflower',   unit: 'per ton',      district: 'Harare',   base: 5500, volatility: 150 },
-    { commodity: 'Sugar Beans', unit: 'per kg',       district: 'Masvingo', base: 12,   volatility: 0.8 },
-    { commodity: 'Cattle',      unit: 'per head',     district: 'Harare',   base: 1800, volatility: 100 },
-    { commodity: 'Goats',       unit: 'per head',     district: 'Harare',   base: 280,  volatility: 20  },
-    { commodity: 'Poultry',     unit: 'per bird',     district: 'Harare',   base: 22,   volatility: 2   },
-    { commodity: 'Tomatoes',    unit: 'per 30kg crate', district: 'Harare', base: 85,   volatility: 15  },
-    { commodity: 'Potatoes',    unit: 'per 50kg bag', district: 'Mutare',   base: 160,  volatility: 20  },
-    { commodity: 'Cabbages',    unit: 'per head',     district: 'Harare',   base: 3.5,  volatility: 0.5 },
-    { commodity: 'Onions',      unit: 'per 20kg bag', district: 'Kwekwe',   base: 95,   volatility: 10  },
+    { commodity: 'Maize',       unit: 'per 50kg bag',   district: 'Harare',   base: 420,  volatility: 30  },
+    { commodity: 'Maize',       unit: 'per 50kg bag',   district: 'Bulawayo', base: 430,  volatility: 30  },
+    { commodity: 'Maize',       unit: 'per 50kg bag',   district: 'Mutare',   base: 415,  volatility: 25  },
+    { commodity: 'Maize',       unit: 'per 50kg bag',   district: 'Kwekwe',   base: 418,  volatility: 25  },
+    { commodity: 'Wheat',       unit: 'per ton',        district: 'Harare',   base: 6800, volatility: 200 },
+    { commodity: 'Soya Beans',  unit: 'per ton',        district: 'Harare',   base: 9200, volatility: 300 },
+    { commodity: 'Groundnuts',  unit: 'per kg',         district: 'Gweru',    base: 5.2,  volatility: 0.4 },
+    { commodity: 'Sunflower',   unit: 'per ton',        district: 'Harare',   base: 5500, volatility: 150 },
+    { commodity: 'Sugar Beans', unit: 'per kg',         district: 'Masvingo', base: 12,   volatility: 0.8 },
+    { commodity: 'Cattle',      unit: 'per head',       district: 'Harare',   base: 1800, volatility: 100 },
+    { commodity: 'Goats',       unit: 'per head',       district: 'Harare',   base: 280,  volatility: 20  },
+    { commodity: 'Poultry',     unit: 'per bird',       district: 'Harare',   base: 22,   volatility: 2   },
+    { commodity: 'Tomatoes',    unit: 'per 30kg crate', district: 'Harare',   base: 85,   volatility: 15  },
+    { commodity: 'Potatoes',    unit: 'per 50kg bag',   district: 'Mutare',   base: 160,  volatility: 20  },
+    { commodity: 'Cabbages',    unit: 'per head',       district: 'Harare',   base: 3.5,  volatility: 0.5 },
+    { commodity: 'Onions',      unit: 'per 20kg bag',   district: 'Kwekwe',   base: 95,   volatility: 10  },
   ];
 
   try {
     const batch = db.batch();
 
-    // Fetch yesterday's prices to compute trend
+    // Fetch previous prices for trend calculation
     const prevSnap = await db.collection('marketPrices')
       .where('autoGenerated', '==', true)
       .orderBy('updatedAt', 'desc')
@@ -792,21 +784,22 @@ async function runDailyPriceCron() {
     });
 
     for (const item of commodities) {
-      const key = `${item.commodity}|${item.district}`;
+      const key      = `${item.commodity}|${item.district}`;
       const prevPrice = prevPrices[key] || item.base;
-
-      // Random walk within volatility range
-      const change = (Math.random() - 0.5) * 2 * item.volatility;
-      const newPrice = Math.max(item.base * 0.6, Math.min(item.base * 1.4, prevPrice + change));
+      const change    = (Math.random() - 0.5) * 2 * item.volatility;
+      const newPrice  = Math.max(item.base * 0.6, Math.min(item.base * 1.4, prevPrice + change));
       const roundedPrice = item.base < 10
-        ? Math.round(newPrice * 100) / 100   // 2 dp for small prices
+        ? Math.round(newPrice * 100) / 100
         : Math.round(newPrice);
 
       const trend = newPrice > prevPrice + (item.volatility * 0.1) ? 'up'
                   : newPrice < prevPrice - (item.volatility * 0.1) ? 'down'
                   : 'stable';
 
-      const ref = db.collection('marketPrices').doc();
+      // Deterministic doc ID — overwrites same doc each run instead of accumulating duplicates
+      const docId = `${item.commodity.replace(/\s+/g, '_')}_${item.district}_auto`;
+      const ref   = db.collection('marketPrices').doc(docId);
+
       batch.set(ref, {
         commodity:     item.commodity,
         unit:          item.unit,
@@ -820,7 +813,10 @@ async function runDailyPriceCron() {
     }
 
     await batch.commit();
-    console.log(`[Cron] Market prices updated — ${commodities.length} commodities written`);
+
+    _lastCronRunAt  = new Date().toISOString();
+    _lastCronStatus = 'success';
+    console.log(`[Cron] Market prices updated — ${commodities.length} docs written`);
 
     // Broadcast push alert about new prices
     if (pushReady) {
@@ -842,25 +838,173 @@ async function runDailyPriceCron() {
       console.log(`[Cron] Price push sent to ${sent} devices`);
     }
   } catch (e) {
+    _lastCronStatus = 'failed: ' + e.message;
     console.error('[Cron] Market price cron failed:', e.message);
   }
 }
 
-// Run cron check every 30 minutes
-setInterval(runDailyPriceCron, 30 * 60 * 1000);
-// Also run once on startup (will no-op unless it's 6 AM)
+// setInterval as fallback — only fires during the 6 AM Zimbabwe hour
+// Not reliable on Render free tier; use Render Cron Jobs as primary trigger
+setInterval(() => {
+  const hourZW = new Date(Date.now() + 2 * 60 * 60 * 1000).getUTCHours();
+  if (hourZW === 6) runDailyPriceCron();
+}, 30 * 60 * 1000);
+
+// Run once on startup — no-ops unless it happens to be 6 AM
 runDailyPriceCron();
 
-// Manual trigger endpoint (admin only)
-app.post('/api/cron/prices', verifyToken, requireAdmin, async (req, res) => {
-  _lastPriceCronDate = ''; // reset lock so it runs immediately
+// External cron trigger — Render Cron Job hits this with X-Cron-Secret header
+// Also works as admin manual trigger (falls back to verifyToken + requireAdmin if no secret configured)
+app.post('/api/cron/prices', async (req, res, next) => {
+  const secret   = process.env.CRON_SECRET;
+  const provided = req.headers['x-cron-secret'];
+
+  if (secret && provided === secret) {
+    // Valid external cron call — run immediately
+    _lastPriceCronDate = '';
+    await runDailyPriceCron();
+    return res.json({ success: true, status: _lastCronStatus, ranAt: _lastCronRunAt });
+  }
+
+  if (secret && provided !== secret) {
+    return res.status(401).json({ error: 'Invalid cron secret' });
+  }
+
+  // No CRON_SECRET configured — require admin auth for manual trigger
+  next();
+}, verifyToken, requireAdmin, async (req, res) => {
+  _lastPriceCronDate = '';
   await runDailyPriceCron();
-  res.json({ success: true, message: 'Market price cron executed' });
+  res.json({ success: true, status: _lastCronStatus, ranAt: _lastCronRunAt });
 });
+
+// Cron status — lets you verify the cron is actually running
+app.get('/api/cron/status', verifyToken, requireAdmin, (req, res) => {
+  res.json({
+    lastRunAt:    _lastCronRunAt   || 'never',
+    lastStatus:   _lastCronStatus  || 'never_run',
+    lastDateKey:  _lastPriceCronDate || 'none',
+    serverTime:   new Date().toISOString(),
+    zimbabweTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
+  });
+});
+
+// ── AgroBot: build live Firestore context for the current user ────────────────
+async function buildUserContext(uid) {
+  if (!db) return '';
+
+  try {
+    const [profileRes, pricesRes, livestockRes, listingsRes, yieldsRes] = await Promise.allSettled([
+      // 1. User profile
+      db.collection('users').doc(uid).get(),
+
+      // 2. Latest market prices
+      db.collection('marketPrices')
+        .orderBy('updatedAt', 'desc')
+        .limit(20)
+        .get(),
+
+      // 3. User's livestock
+      db.collection('livestock')
+        .where('ownerId', '==', uid)
+        .limit(50)
+        .get(),
+
+      // 4. User's active listings
+      db.collection('listings')
+        .where('userId', '==', uid)
+        .where('status', '==', 'active')
+        .limit(10)
+        .get(),
+
+      // 5. User's recent yields
+      db.collection('yields')
+        .where('userId', '==', uid)
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get()
+    ]);
+
+    let context = '\n\n--- LIVE USER CONTEXT (use this to personalise your answer) ---\n';
+
+    // Profile
+    if (profileRes.status === 'fulfilled' && profileRes.value.exists) {
+      const p = profileRes.value.data();
+      context += `User: ${p.name || 'Unknown'}\n`;
+      context += `Role: ${p.role || 'farmer'}\n`;
+      context += `District: ${p.district || 'Not specified'}\n`;
+      context += `Phone: ${p.phone || 'Not provided'}\n`;
+    }
+
+    // Market prices — deduplicate, show user's district first
+    if (pricesRes.status === 'fulfilled' && !pricesRes.value.empty) {
+      const userDistrict = profileRes.status === 'fulfilled' && profileRes.value.exists
+        ? (profileRes.value.data().district || '') : '';
+
+      const seen = new Set();
+      const prices = [];
+      pricesRes.value.docs.forEach(d => {
+        const p = d.data();
+        const key = `${p.commodity}|${p.district}`;
+        if (!seen.has(key)) { seen.add(key); prices.push(p); }
+      });
+
+      prices.sort((a, b) => {
+        if (a.district === userDistrict) return -1;
+        if (b.district === userDistrict) return 1;
+        return 0;
+      });
+
+      context += '\nCurrent Market Prices (ZiG):\n';
+      prices.slice(0, 12).forEach(p => {
+        const trend = p.trend === 'up' ? '↑' : p.trend === 'down' ? '↓' : '→';
+        context += `  ${p.commodity} (${p.district}): ZiG ${p.price} ${p.unit} ${trend}\n`;
+      });
+    }
+
+    // Livestock summary
+    if (livestockRes.status === 'fulfilled' && !livestockRes.value.empty) {
+      const counts = {};
+      livestockRes.value.docs.forEach(d => {
+        const type = d.data().type || 'other';
+        counts[type] = (counts[type] || 0) + 1;
+      });
+      context += '\nUser\'s Livestock:\n';
+      Object.entries(counts).forEach(([type, count]) => {
+        context += `  ${type}: ${count}\n`;
+      });
+    }
+
+    // Active listings
+    if (listingsRes.status === 'fulfilled' && !listingsRes.value.empty) {
+      context += '\nUser\'s Active Listings:\n';
+      listingsRes.value.docs.forEach(d => {
+        const l = d.data();
+        context += `  ${l.title || 'Listing'}: ZiG ${l.price || '?'} (${l.category || 'general'})\n`;
+      });
+    }
+
+    // Recent yields
+    if (yieldsRes.status === 'fulfilled' && !yieldsRes.value.empty) {
+      context += '\nRecent Yield Records:\n';
+      yieldsRes.value.docs.forEach(d => {
+        const y = d.data();
+        context += `  ${y.crop || 'Crop'}: ${y.amount || '?'} ${y.unit || 'kg'} — ${y.season || ''}\n`;
+      });
+    }
+
+    context += '--- END CONTEXT ---\n';
+    return context;
+
+  } catch (e) {
+    console.error('[AgroBot] Context build failed:', e.message);
+    return ''; // fail silently — still answer without context
+  }
+}
 
 // ── Gemini Chatbot Endpoint ────────────────────────────────────────────────────
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 // Rate limiter specifically for chatbot — 30 requests per minute per IP
 const chatbotLimiter = rateLimit({
@@ -885,6 +1029,8 @@ Your expertise covers:
 
 Rules:
 - Keep answers practical, actionable, and relevant to Zimbabwean conditions
+- When the user context block is present, USE it — reference the user's district, their livestock, their listings, and real market prices in your answer
+- If market prices are available in the context, always quote them with the ZiG amount and trend arrow
 - Mention specific products, brands, or government bodies when helpful
 - If a question is completely unrelated to agriculture, farming, or rural livelihoods, politely redirect
 - Be warm and encouraging — most users are smallholder farmers
@@ -906,25 +1052,31 @@ app.post('/api/chat', verifyToken, chatbotLimiter, async (req, res) => {
   }
 
   try {
-    // Prepend system prompt to the user's message
-    const prompt = `${AGRI_SYSTEM_PROMPT}\n\nUser: ${message.trim()}\n\nAssistant:`;
+    // Pull live Firestore context for this user
+    const liveContext = await buildUserContext(req.user.uid);
 
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            {
-              text: prompt
-            }
-          ]
-        }
-      ]
-    };
+    // Build contents array for multi-turn support
+    // history = [{ role: 'user'|'model', text: '...' }, ...]
+    const contents = [];
+
+    // Inject prior conversation turns (capped at last 6 to limit token usage)
+    history.slice(-6).forEach(turn => {
+      contents.push({
+        role:  turn.role === 'model' ? 'model' : 'user',
+        parts: [{ text: turn.text }]
+      });
+    });
+
+    // Final turn: system prompt + live context + user's current message
+    contents.push({
+      role:  'user',
+      parts: [{ text: `${AGRI_SYSTEM_PROMPT}${liveContext}\n\nUser message: ${message.trim()}` }]
+    });
 
     const geminiRes = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
+      body:    JSON.stringify({ contents })
     });
 
     const data = await geminiRes.json();
@@ -935,12 +1087,12 @@ app.post('/api/chat', verifyToken, chatbotLimiter, async (req, res) => {
     }
 
     const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
     if (!reply) {
       return res.status(502).json({ error: 'No response from AI' });
     }
 
     res.json({ reply: reply.trim() });
+
   } catch (e) {
     console.error('Chat error:', e.message);
     res.status(500).json({ error: 'Chat service error' });
