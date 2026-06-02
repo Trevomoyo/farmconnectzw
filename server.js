@@ -12,6 +12,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const http = require('http'); 
 const { Server } = require('socket.io');
+const cron = require('node-cron'); // Added for Escrow hourly checks
 
 // New dependencies for rich media handling
 const { createClient } = require('@supabase/supabase-js');
@@ -250,6 +251,78 @@ app.get('/api/health', (req, res) => {
     storage: supabaseReady ? 'enabled' : 'disabled'
   });
 });
+
+// ============================================================================
+// ESCROW, IN-APP WALLET & DISPUTE ENDPOINTS
+// ============================================================================
+
+app.post('/api/wallet/deposit', verifyToken, async (req, res) => {
+  const { amount } = req.body;
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'Invalid amount' });
+
+  try {
+    const userRef = db.collection('users').doc(req.user.uid);
+    // Directly injects USD into Available Balance (acts as webhook target post-payment)
+    await userRef.set({
+      wallet: { available_balance: admin.firestore.FieldValue.increment(amount) }
+    }, { merge: true });
+
+    res.json({ success: true, message: `Successfully deposited $${amount} USD` });
+  } catch (error) {
+    res.status(500).json({ error: 'Deposit failed' });
+  }
+});
+
+app.post('/api/wallet/withdraw', verifyToken, async (req, res) => {
+  const { amount, method, accountDetails } = req.body; 
+  
+  try {
+    const userRef = db.collection('users').doc(req.user.uid);
+    
+    await db.runTransaction(async (transaction) => {
+      const doc = await transaction.get(userRef);
+      const currentWallet = doc.data()?.wallet || { available_balance: 0 };
+      
+      if (currentWallet.available_balance < amount) {
+        throw new Error('Insufficient available funds');
+      }
+
+      transaction.update(userRef, {
+        'wallet.available_balance': admin.firestore.FieldValue.increment(-amount)
+      });
+
+      const withdrawRef = db.collection('withdrawals').doc();
+      transaction.set(withdrawRef, {
+        userId: req.user.uid,
+        amount,
+        method,
+        accountDetails,
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    res.json({ success: true, message: 'Withdrawal request submitted successfully' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/orders/dispute', verifyToken, async (req, res) => {
+  const { orderId, reason } = req.body;
+  try {
+    const orderRef = db.collection('orders').doc(orderId);
+    await orderRef.update({
+      disputed: true,
+      disputeReason: reason,
+      disputedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    res.json({ success: true, message: 'Order disputed. Funds frozen.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to raise dispute' });
+  }
+});
+
 
 // Supplier Commission API
 const COMMISSION_RATE = 0.05; // 5% commission
@@ -680,16 +753,12 @@ app.post('/api/payment/initiate', verifyToken, async (req, res) => {
       paynowUrl      = 'https://www.paynow.co.zw/interface/remotetransaction';
     }
 
-    console.log('Paynow posting to:', paynowUrl);
-    console.log('Paynow fields (no key):', { ...fields, hash: fields.hash });
-
     const pnRes = await fetch(paynowUrl, {
       method:  'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body:    new URLSearchParams(fields).toString()
     });
     const rawText = await pnRes.text();
-    console.log('Paynow response:', rawText);
 
     const parsed = {};
     rawText.split('&').forEach(pair => {
@@ -721,20 +790,94 @@ app.post('/api/payment/callback', async (req, res) => {
   res.send('OK');
 });
 
-// ── Daily Market Prices Cron Job ──────────────────────────────────────────────
-// IMPORTANT: On Render free tier, setInterval dies when the instance spins down.
-// Fix: Use Render's native Cron Job service to POST to /api/cron/prices instead.
-// Render dashboard → your service → Cron Jobs tab → add:
-//   Schedule : 0 4 * * *   (4:00 AM UTC = 6:00 AM Zimbabwe time)
-//   Command  : curl -X POST https://YOUR-SERVICE.onrender.com/api/cron/prices \
-//                   -H "X-Cron-Secret: YOUR_SECRET"
-// Add CRON_SECRET to your Render environment variables.
+// ============================================================================
+// AUTOMATED CRON ROUTINES (Escrow & Market Prices)
+// ============================================================================
 
+// 1. Escrow Release Routine (Releases funds after 48 hours)
+async function runHourlyEscrowRelease() {
+  if (!db) return;
+  console.log('[Cron] Running Escrow Release Routine...');
+  const now = Date.now();
+  const FORTY_EIGHT_HOURS_MS = 48 * 60 * 60 * 1000;
+
+  try {
+    const ordersSnap = await db.collection('orders')
+      .where('status', '==', 'Dispatched')
+      .where('disputed', '==', false)
+      .get();
+
+    const batchPromises = [];
+    ordersSnap.forEach(doc => {
+      const order = doc.data();
+      const dispatchTime = order.dispatchedAt ? order.dispatchedAt.toMillis() : null;
+
+      if (dispatchTime && (now - dispatchTime >= FORTY_EIGHT_HOURS_MS)) {
+        batchPromises.push(db.runTransaction(async (t) => {
+          const sellerRef = db.collection('users').doc(order.sellerId);
+          // Release funds to seller
+          t.update(sellerRef, {
+            'wallet.pending_balance': admin.firestore.FieldValue.increment(-order.amount),
+            'wallet.available_balance': admin.firestore.FieldValue.increment(order.amount)
+          });
+          // Mark order as Delivered/Completed
+          t.update(doc.ref, { 
+            status: 'Delivered', 
+            autoReleased: true,
+            completedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+
+          // Create Notification for Seller
+          const notifRef = db.collection('notifications').doc();
+          t.set(notifRef, {
+            userId: order.sellerId,
+            type: 'transaction_success',
+            title: 'Funds Released! 🎉',
+            message: `Your funds of $${order.amount} USD for order ${doc.id} have cleared into your available balance.`,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }).then(() => console.log(`Auto-released funds for order: ${doc.id}`))
+        );
+      }
+    });
+    
+    await Promise.all(batchPromises);
+  } catch (err) {
+    console.error('Escrow routine error:', err);
+  }
+}
+
+// Escrow internal schedule (runs locally every hour on the 0 minute)
+cron.schedule('0 * * * *', runHourlyEscrowRelease);
+
+// Escrow External Webhook Trigger (for Render Cron Jobs)
+// Command: curl -X POST https://YOUR-SERVICE.onrender.com/api/cron/escrow -H "X-Cron-Secret: YOUR_SECRET"
+app.post('/api/cron/escrow', async (req, res, next) => {
+  const secret   = process.env.CRON_SECRET;
+  const provided = req.headers['x-cron-secret'];
+
+  if (secret && provided === secret) {
+    await runHourlyEscrowRelease();
+    return res.json({ success: true, message: 'Escrow release routine executed securely' });
+  }
+
+  if (secret && provided !== secret) {
+    return res.status(401).json({ error: 'Invalid cron secret' });
+  }
+
+  next();
+}, verifyToken, requireAdmin, async (req, res) => {
+  await runHourlyEscrowRelease();
+  res.json({ success: true, message: 'Escrow release routine executed manually' });
+});
+
+
+// 2. Daily Market Prices Cron Job
 let _lastPriceCronDate = '';
 let _lastCronRunAt     = null;
 let _lastCronStatus    = 'never_run';
 
-// Core cron logic — no hour-check here so manual/external triggers always work
 async function runDailyPriceCron() {
   if (!db) return;
 
@@ -845,7 +988,6 @@ async function runDailyPriceCron() {
 }
 
 // setInterval as fallback — only fires during the 6 AM Zimbabwe hour
-// Not reliable on Render free tier; use Render Cron Jobs as primary trigger
 setInterval(() => {
   const hourZW = new Date(Date.now() + 2 * 60 * 60 * 1000).getUTCHours();
   if (hourZW === 6) runDailyPriceCron();
@@ -855,7 +997,6 @@ setInterval(() => {
 runDailyPriceCron();
 
 // External cron trigger — Render Cron Job hits this with X-Cron-Secret header
-// Also works as admin manual trigger (falls back to verifyToken + requireAdmin if no secret configured)
 app.post('/api/cron/prices', async (req, res, next) => {
   const secret   = process.env.CRON_SECRET;
   const provided = req.headers['x-cron-secret'];
@@ -882,15 +1023,18 @@ app.post('/api/cron/prices', async (req, res, next) => {
 // Cron status — lets you verify the cron is actually running
 app.get('/api/cron/status', verifyToken, requireAdmin, (req, res) => {
   res.json({
-    lastRunAt:    _lastCronRunAt   || 'never',
-    lastStatus:   _lastCronStatus  || 'never_run',
+    lastRunAt:    _lastCronRunAt  || 'never',
+    lastStatus:   _lastCronStatus || 'never_run',
     lastDateKey:  _lastPriceCronDate || 'none',
     serverTime:   new Date().toISOString(),
     zimbabweTime: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()
   });
 });
 
-// ── AgroBot: build live Firestore context for the current user ────────────────
+// ============================================================================
+// AGROBOT (Gemini Integration)
+// ============================================================================
+
 async function buildUserContext(uid) {
   if (!db) return '';
 
